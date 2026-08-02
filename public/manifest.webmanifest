@@ -1,0 +1,13 @@
+{
+  "name": "Our Little Space",
+  "short_name": "Little Space",
+  "description": "一个只属于两个人的私密回忆空间",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f0e9dc",
+  "theme_color": "#f0e9dc",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "./favicon.svg", "sizes": "64x64", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

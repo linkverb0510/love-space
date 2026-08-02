@@ -119,6 +119,9 @@ alter table public.timeline_entries enable row level security;
 alter table public.plans enable row level security;
 alter table public.photos enable row level security;
 
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.spaces, public.space_members, public.timeline_entries, public.plans, public.photos to anon, authenticated;
+
 drop policy if exists "spaces_select_members_or_demo" on public.spaces;
 create policy "spaces_select_members_or_demo"
 on public.spaces for select

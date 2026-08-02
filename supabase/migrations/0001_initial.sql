@@ -146,6 +146,13 @@ to authenticated
 using (public.is_space_member(id))
 with check (public.is_space_member(id));
 
+drop policy if exists "spaces_update_demo" on public.spaces;
+create policy "spaces_update_demo"
+on public.spaces for update
+to anon, authenticated
+using (public_demo)
+with check (public_demo);
+
 drop policy if exists "spaces_delete_members" on public.spaces;
 create policy "spaces_delete_members"
 on public.spaces for delete

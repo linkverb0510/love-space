@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadSpaceData, resetSpaceData, toPersistedSpaceData } from './storage';
+import { hasDemoSession, loadSpaceData, resetSpaceData, toPersistedSpaceData } from './storage';
 
 function createLocalStorage() {
   const values = new Map<string, string>();
@@ -48,5 +48,13 @@ describe('empty local space storage', () => {
 
     expect(loadSpaceData()).toMatchObject({ relationshipStart: null, timeline: [], photos: [], plans: [] });
     expect(localStorage.getItem('love-space-demo-data')).toBeNull();
+  });
+
+  it('does not reuse a session created before the fixed password gate', () => {
+    const localStorage = createLocalStorage();
+    localStorage.setItem('love-space-demo-session', 'active');
+    vi.stubGlobal('window', { localStorage });
+
+    expect(hasDemoSession()).toBe(false);
   });
 });

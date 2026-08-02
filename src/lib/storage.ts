@@ -83,7 +83,8 @@ export function resetSpaceData(): SpaceData {
   return initial;
 }
 
-const SESSION_KEY = 'love-space-demo-session';
+const SESSION_KEY = 'love-space-session-v2';
+const LEGACY_SESSION_KEY = 'love-space-demo-session';
 
 export function hasDemoSession(): boolean {
   return typeof window !== 'undefined' && window.localStorage.getItem(SESSION_KEY) === 'active';
@@ -95,4 +96,5 @@ export function startDemoSession(): void {
 
 export function endDemoSession(): void {
   window.localStorage.removeItem(SESSION_KEY);
+  window.localStorage.removeItem(LEGACY_SESSION_KEY);
 }

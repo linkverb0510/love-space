@@ -42,6 +42,7 @@ jobs:
           VITE_SPACE_PATH: public-demo
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SPACE_PASSWORD_HASH: ${{ secrets.VITE_SPACE_PASSWORD_HASH }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

@@ -215,7 +215,7 @@ function mapPlanRow(row: PlanRow): PlanItem {
   };
 }
 
-class SupabaseSpaceRepository implements SnapshotSpaceRepository {
+export class SupabaseSpaceRepository implements SnapshotSpaceRepository {
   private space?: SpaceRow;
   private snapshotQueue: Promise<void> = Promise.resolve();
 
@@ -311,7 +311,7 @@ class SupabaseSpaceRepository implements SnapshotSpaceRepository {
       name: settings.spaceName,
       relationship_start: settings.relationshipStart,
       timezone: settings.timezone
-    }).eq('id', space.id);
+    }).eq('id', space.id).select('id').single();
     assertSupabaseResult(result);
     this.space = { ...space, name: settings.spaceName, relationship_start: settings.relationshipStart, timezone: settings.timezone };
   }

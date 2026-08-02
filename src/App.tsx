@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { createMemoryDraftFromPlan, getNextMilestone, getTimelineEntries } from './lib/domain';
 import { getRelationshipDuration } from './lib/dates';
+import { verifyAccessPassword } from './lib/access';
+import { canEditSpace, readRelationshipStart } from './lib/editing';
 import { validateImageFile } from './lib/media';
 import { deleteLocalAsset, hydrateLocalPhotoSources } from './lib/local-media';
 import { createSpaceRepository } from './lib/repository';
@@ -105,22 +107,33 @@ function App() {
   const config = useMemo(() => getRuntimeConfig(), []);
   const [authorized, setAuthorized] = useState(hasDemoSession());
 
-  if (!authorized) return <AccessGate publicDemo={config.publicDemo} onEnter={() => { startDemoSession(); setAuthorized(true); }} />;
+  if (!authorized) return <AccessGate publicDemo={config.publicDemo} spacePasswordHash={config.spacePasswordHash} onEnter={() => { startDemoSession(); setAuthorized(true); }} />;
 
   return <SpaceApp config={config} onLock={() => { endDemoSession(); setAuthorized(false); }} />;
 }
 
-function AccessGate({ publicDemo, onEnter }: { publicDemo: boolean; onEnter: () => void }) {
+function AccessGate({ publicDemo, spacePasswordHash, onEnter }: { publicDemo: boolean; spacePasswordHash: string; onEnter: () => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [checking, setChecking] = useState(false);
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (password.trim().length < 4) {
-      setError('演示模式请输入至少 4 位密码。');
+    if (!spacePasswordHash) {
+      setError('网站尚未配置访问密码，请联系空间创建者。');
       return;
     }
-    onEnter();
+    setChecking(true);
+    setError('');
+    try {
+      if (await verifyAccessPassword(password, spacePasswordHash)) {
+        onEnter();
+      } else {
+        setError('密码不正确，请重新输入。');
+      }
+    } finally {
+      setChecking(false);
+    }
   }
 
   return (
@@ -140,7 +153,7 @@ function AccessGate({ publicDemo, onEnter }: { publicDemo: boolean; onEnter: () 
           <input className="visually-hidden" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" value="our-little-space" readOnly />
           <div className="input-with-icon"><KeyRound size={18} /><input id="space-password" value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="输入你们的密码" autoComplete="new-password" autoFocus /></div>
           {error && <p className="form-error">{error}</p>}
-          <button className="button button-dark button-wide" type="submit"><LockKeyhole size={17} />进入我们的空间</button>
+          <button className="button button-dark button-wide" type="submit" disabled={checking}><LockKeyhole size={17} />{checking ? '验证中…' : '进入我们的空间'}</button>
         </form>
         <p className="access-footnote"><LockKeyhole size={14} /> {publicDemo ? '当前是公开演示空间，请不要上传隐私照片。' : '当前是本地演示模式，接入 Supabase 后启用真实私密链接验证。'}</p>
       </section>
@@ -341,13 +354,32 @@ function SpaceApp({ config, onLock }: { config: RuntimeConfig; onLock: () => voi
     setToast('空间已经清空。');
   }
 
-  function saveRelationshipStart(relationshipStart: string | null) {
+  async function saveRelationshipStart(relationshipStart: string | null) {
+    if (remoteMode) {
+      if (!dataReady) {
+        setToast('共享空间正在加载，请稍后再编辑。');
+        return;
+      }
+      try {
+        await repository.saveSettings({
+          spaceName: data.spaceName,
+          relationshipStart,
+          timezone: data.timezone
+        });
+        // The setting was persisted directly, so the snapshot effect should not write stale state again.
+        skipRemoteSave.current = true;
+      } catch {
+        setToast('开始日期保存失败，请稍后重试。');
+        return;
+      }
+    }
     updateData((current) => ({ ...current, relationshipStart }), '开始日期已经更新。');
     setSheet(null);
   }
 
   const recentEntry = timeline.find((entry) => entry.type === 'memory') ?? timeline[0];
   const recentPhoto = recentEntry ? data.photos.find((photo) => photo.timelineEntryId === recentEntry.id || recentEntry.photoIds.includes(photo.id)) ?? data.photos[0] : data.photos[0];
+  const editingReady = canEditSpace(remoteMode, dataReady);
 
   return (
     <div className="app-shell">
@@ -360,11 +392,11 @@ function SpaceApp({ config, onLock }: { config: RuntimeConfig; onLock: () => voi
       <main className="main-content">
         <header className="topbar"><div><span className="mobile-kicker">OUR LITTLE SPACE</span><h2>{pageTitle}</h2></div><div className="topbar-actions"><span className="sync-status"><span className="status-dot" />{remoteMode ? '共享空间已同步' : '本地已保存'}</span><button className="avatar-button" title="设置" aria-label="设置" onClick={() => setView('settings')}>A<span>+</span></button></div></header>
         <div className="page-content">
-          {view === 'home' && <Dashboard data={data} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} openView={openView} onAddMemory={() => setSheet({ type: 'memory-form' })} onAddMilestone={() => setSheet({ type: 'milestone-form' })} onAddPlan={() => setSheet({ type: 'plan-form' })} onSetRelationshipStart={() => setSheet({ type: 'settings-form' })} onTogglePlan={(plan) => savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' })} />}
+          {view === 'home' && <Dashboard data={data} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} openView={openView} onAddMemory={() => setSheet({ type: 'memory-form' })} onAddMilestone={() => setSheet({ type: 'milestone-form' })} onAddPlan={() => setSheet({ type: 'plan-form' })} onSetRelationshipStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else setToast('共享空间正在加载，请稍后再编辑。'); }} onTogglePlan={(plan) => savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' })} />}
           {view === 'timeline' && <TimelineView entries={timeline} photos={data.photos} onAddMemory={() => setSheet({ type: 'memory-form' })} onAddMilestone={() => setSheet({ type: 'milestone-form' })} onOpen={(entry) => setSheet({ type: 'timeline-detail', entry })} onEdit={(entry) => setSheet(entry.type === 'memory' ? { type: 'memory-form', entry } : { type: 'milestone-form', entry })} onDelete={deleteTimelineEntry} />}
           {view === 'photos' && <PhotosView photos={data.photos} uploads={uploads} timeline={timeline} onUpload={addPhotos} onEdit={(photo) => setSheet({ type: 'photo-form', photo })} onDelete={deletePhoto} onClearUpload={(id) => setUploads((current) => current.filter((item) => item.id !== id))} onRetry={retryUpload} />}
           {view === 'plans' && <PlansView plans={data.plans} onAdd={() => setSheet({ type: 'plan-form' })} onEdit={(plan) => setSheet({ type: 'plan-form', plan })} onDelete={deletePlan} onToggle={(plan) => savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' })} onWriteMemory={(plan) => setSheet({ type: 'memory-form', draft: createMemoryDraftFromPlan(plan, todayString()) })} />}
-          {view === 'settings' && <SettingsView data={data} publicDemo={config.publicDemo} remoteMode={remoteMode} onReset={resetSpace} onEditStart={() => setSheet({ type: 'settings-form' })} onLock={onLock} />}
+          {view === 'settings' && <SettingsView data={data} publicDemo={config.publicDemo} remoteMode={remoteMode} onReset={resetSpace} onEditStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else setToast('共享空间正在加载，请稍后再编辑。'); }} onLock={onLock} />}
         </div>
       </main>
       <nav className="mobile-nav" aria-label="移动端导航">{navItems.map((item) => <NavButton key={item.key} item={item} active={view === item.key} onClick={() => setView(item.key)} compact />)}</nav>
@@ -446,11 +478,11 @@ function TimelineDetailSheet({ entry, photos, onClose, onEdit, onDelete }: { ent
 
 function RelationshipSettingsForm({ relationshipStart, onClose, onSubmit }: { relationshipStart: string | null; onClose: () => void; onSubmit: (relationshipStart: string | null) => void }) {
   const [date, setDate] = useState(relationshipStart ?? '');
-  function submit(event: FormEvent) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit(date || null);
+    onSubmit(readRelationshipStart(new FormData(event.currentTarget)));
   }
-  return <Sheet title="设置恋爱开始日" eyebrow="RELATIONSHIP START" onClose={onClose}><form className="modal-form" onSubmit={submit}><p className="form-description">这一天会成为你们时间线的起点，也会用于计算首页的恋爱时长。</p><label>开始日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><FormActions onClose={onClose} submitLabel="保存开始日" /></form></Sheet>;
+  return <Sheet title="设置恋爱开始日" eyebrow="RELATIONSHIP START" onClose={onClose}><form className="modal-form" onSubmit={submit}><p className="form-description">这一天会成为你们时间线的起点，也会用于计算首页的恋爱时长。</p><label>开始日期<input name="relationship-start" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><FormActions onClose={onClose} submitLabel="保存开始日" /></form></Sheet>;
 }
 
 function MemoryForm({ entry, draft, onClose, onSubmit }: { entry?: MemoryEntry; draft?: MemoryEntry; onClose: () => void; onSubmit: (memory: MemoryEntry) => void }) {

@@ -8,7 +8,8 @@ describe('getRuntimeConfig', () => {
       publicDemo: false,
       spacePath: 'public-demo',
       supabaseUrl: '',
-      supabaseAnonKey: ''
+      supabaseAnonKey: '',
+      spacePasswordHash: ''
     });
   });
 
@@ -18,13 +19,15 @@ describe('getRuntimeConfig', () => {
       VITE_PUBLIC_DEMO: 'true',
       VITE_SPACE_PATH: 'demo-space',
       VITE_SUPABASE_URL: 'https://example.supabase.co',
-      VITE_SUPABASE_ANON_KEY: 'anon-key'
+      VITE_SUPABASE_ANON_KEY: 'anon-key',
+      VITE_SPACE_PASSWORD_HASH: 'ABC123'
     })).toEqual({
       dataMode: 'supabase',
       publicDemo: true,
       spacePath: 'demo-space',
       supabaseUrl: 'https://example.supabase.co',
-      supabaseAnonKey: 'anon-key'
+      supabaseAnonKey: 'anon-key',
+      spacePasswordHash: 'abc123'
     });
   });
 

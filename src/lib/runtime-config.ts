@@ -6,10 +6,11 @@ export type RuntimeConfig = {
   spacePath: string;
   supabaseUrl: string;
   supabaseAnonKey: string;
+  spacePasswordHash: string;
 };
 
 export type RuntimeEnv = Partial<Record<
-  'VITE_DATA_MODE' | 'VITE_PUBLIC_DEMO' | 'VITE_SPACE_PATH' | 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_ANON_KEY',
+  'VITE_DATA_MODE' | 'VITE_PUBLIC_DEMO' | 'VITE_SPACE_PATH' | 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_ANON_KEY' | 'VITE_SPACE_PASSWORD_HASH',
   string | undefined
 >>;
 
@@ -22,6 +23,7 @@ export function getRuntimeConfig(env: RuntimeEnv = import.meta.env as RuntimeEnv
     publicDemo: env.VITE_PUBLIC_DEMO === 'true',
     spacePath: env.VITE_SPACE_PATH?.trim() || 'public-demo',
     supabaseUrl: env.VITE_SUPABASE_URL?.trim() || '',
-    supabaseAnonKey: env.VITE_SUPABASE_ANON_KEY?.trim() || ''
+    supabaseAnonKey: env.VITE_SUPABASE_ANON_KEY?.trim() || '',
+    spacePasswordHash: env.VITE_SPACE_PASSWORD_HASH?.trim().toLowerCase() || ''
   };
 }

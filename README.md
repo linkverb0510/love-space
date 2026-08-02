@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-首次进入输入任意 4 位以上密码即可进入演示空间。该密码只是演示入口，不是生产安全机制。
+首次进入需要输入由 `VITE_SPACE_PASSWORD_HASH` 配置的固定密码。密码 hash 只在构建时注入前端，适合轻量访问门禁；公开演示的 Supabase 数据权限仍不是正式私密空间的安全边界。
 
 ## Local data boundary
 
@@ -39,6 +39,7 @@ VITE_PUBLIC_DEMO=true
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 VITE_SPACE_PATH=public-demo
+VITE_SPACE_PASSWORD_HASH=sha256-hash-of-your-password
 ```
 
 公开演示模式只用于展示，不承诺隐私，也不应上传真实私密照片。正式双方空间应关闭 `VITE_PUBLIC_DEMO`，创建成员关系并使用认证和 RLS。
@@ -59,6 +60,12 @@ VITE_SUPABASE_ANON_KEY
 ```
 
 两者只应使用 Supabase 的 publishable/anon key，不要添加 `service_role` key。执行 `supabase/migrations/0001_initial.sql` 后，重新运行 `Deploy love space to GitHub Pages` 工作流即可。
+
+生成密码 hash（不要把明文密码提交到 Git）：
+
+```bash
+node -e "console.log(require('crypto').createHash('sha256').update('your-password').digest('hex'))"
+```
 
 Vercel 仍可作为备用预览平台。构建命令为 `npm run build`，输出目录为 `dist`：
 

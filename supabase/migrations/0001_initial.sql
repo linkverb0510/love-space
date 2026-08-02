@@ -119,6 +119,11 @@ alter table public.timeline_entries enable row level security;
 alter table public.plans enable row level security;
 alter table public.photos enable row level security;
 
+alter table public.spaces replica identity full;
+alter table public.timeline_entries replica identity full;
+alter table public.plans replica identity full;
+alter table public.photos replica identity full;
+
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on public.spaces, public.space_members, public.timeline_entries, public.plans, public.photos to anon, authenticated;
 

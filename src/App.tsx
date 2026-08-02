@@ -101,7 +101,8 @@ function formatTimelineDate(entry: TimelineDisplayEntry, value = entry.date): st
 }
 
 function App() {
-  const config = getRuntimeConfig();
+  // Keep the repository and its Realtime channel stable across state updates.
+  const config = useMemo(() => getRuntimeConfig(), []);
   const [authorized, setAuthorized] = useState(hasDemoSession());
 
   if (!authorized) return <AccessGate publicDemo={config.publicDemo} onEnter={() => { startDemoSession(); setAuthorized(true); }} />;

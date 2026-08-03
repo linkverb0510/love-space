@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hasDemoSession, loadSpaceData, resetSpaceData, toPersistedSpaceData } from './storage';
+import { loadSpaceData, resetSpaceData, toPersistedSpaceData } from './storage';
 
 function createLocalStorage() {
   const values = new Map<string, string>();
@@ -17,13 +17,14 @@ describe('empty local space storage', () => {
     vi.stubGlobal('window', { localStorage: createLocalStorage() });
 
     expect(resetSpaceData()).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       spaceName: 'our little space',
       relationshipStart: null,
       timezone: 'Asia/Hong_Kong',
       timeline: [],
       photos: [],
-      plans: []
+      plans: [],
+      version: 1
     });
   });
 
@@ -34,7 +35,8 @@ describe('empty local space storage', () => {
       timezone: 'Asia/Hong_Kong',
       timeline: [],
       photos: [{ id: 'photo-1', src: 'blob:runtime-url', assetKey: 'photo-1', caption: '照片', date: '2026-08-02' }],
-      plans: []
+      plans: [],
+      version: 1
     });
 
     expect(persisted.photos[0]).toMatchObject({ id: 'photo-1', assetKey: 'photo-1' });
@@ -50,11 +52,23 @@ describe('empty local space storage', () => {
     expect(localStorage.getItem('love-space-demo-data')).toBeNull();
   });
 
-  it('does not reuse a session created before the fixed password gate', () => {
+  it('assigns a version to legacy entities before they can be edited', () => {
     const localStorage = createLocalStorage();
-    localStorage.setItem('love-space-demo-session', 'active');
+    localStorage.setItem('love-space-data-v2', JSON.stringify({
+      spaceName: 'our little space',
+      relationshipStart: null,
+      timezone: 'Asia/Hong_Kong',
+      timeline: [{ id: 'memory-1', type: 'memory', title: '回忆', date: '2026-08-03', body: '内容', tags: [] }],
+      photos: [{ id: 'photo-1', src: '', caption: '照片', date: '2026-08-03' }],
+      plans: [{ id: 'plan-1', title: '计划', type: '生活', status: '计划中', priority: 'medium', assignee: '一起' }]
+    }));
     vi.stubGlobal('window', { localStorage });
 
-    expect(hasDemoSession()).toBe(false);
+    expect(loadSpaceData()).toMatchObject({
+      version: 1,
+      timeline: [{ id: 'memory-1', version: 1 }],
+      photos: [{ id: 'photo-1', version: 1 }],
+      plans: [{ id: 'plan-1', version: 1 }]
+    });
   });
 });

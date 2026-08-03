@@ -9,25 +9,28 @@ describe('getRuntimeConfig', () => {
       spacePath: 'public-demo',
       supabaseUrl: '',
       supabaseAnonKey: '',
-      spacePasswordHash: ''
+      privateSpacePath: 'private-space',
+      sharedAuthEmail: ''
     });
   });
 
-  it('reads the explicit Supabase demo configuration', () => {
+  it('reads the explicit private Supabase configuration', () => {
     expect(getRuntimeConfig({
       VITE_DATA_MODE: 'supabase',
       VITE_PUBLIC_DEMO: 'true',
       VITE_SPACE_PATH: 'demo-space',
       VITE_SUPABASE_URL: 'https://example.supabase.co',
       VITE_SUPABASE_ANON_KEY: 'anon-key',
-      VITE_SPACE_PASSWORD_HASH: 'ABC123'
+      VITE_PRIVATE_SPACE_PATH: 'our-private-space',
+      VITE_SHARED_AUTH_EMAIL: 'shared@example.com'
     })).toEqual({
       dataMode: 'supabase',
       publicDemo: true,
       spacePath: 'demo-space',
       supabaseUrl: 'https://example.supabase.co',
       supabaseAnonKey: 'anon-key',
-      spacePasswordHash: 'abc123'
+      privateSpacePath: 'our-private-space',
+      sharedAuthEmail: 'shared@example.com'
     });
   });
 

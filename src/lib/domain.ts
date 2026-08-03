@@ -1,4 +1,4 @@
-import { getCountdown, getNextAnnualOccurrence } from './dates';
+import { getCountdown, getDateInTimezone, getNextAnnualOccurrence } from './dates';
 import type {
   MemoryEntry,
   MilestoneEntry,
@@ -131,12 +131,16 @@ export function migrateLegacySpaceData(data: LegacySpaceData | SpaceData): Space
       repeatAnnual: event.repeatAnnual,
       time: event.time,
       location: event.location,
-      note: event.note,
-      photoIds: []
+      note: event.note
     })),
     ...data.memories.map<MemoryEntry>((memory) => ({
-      ...memory,
-      type: 'memory'
+      id: memory.id,
+      type: 'memory',
+      title: memory.title,
+      date: memory.date,
+      location: memory.location,
+      body: memory.body,
+      tags: memory.tags
     }))
   ];
 
@@ -165,7 +169,6 @@ function createRelationshipStartEntry(startDate: string): MilestoneEntry {
     kind: 'anniversary',
     repeatAnnual: false,
     note: '这是你们共同时间线的起点。',
-    photoIds: [],
     systemRole: 'relationship-start'
   };
 }
@@ -175,7 +178,7 @@ function enrichEntry(entry: TimelineEntry, now: Date): TimelineDisplayEntry {
 
   const nextOccurrence = entry.repeatAnnual
     ? getNextAnnualOccurrence(entry.date, now)
-    : entry.date >= now.toISOString().slice(0, 10) ? entry.date : undefined;
+    : entry.date >= getDateInTimezone(now) ? entry.date : undefined;
 
   return {
     ...entry,
@@ -209,7 +212,6 @@ export function createMemoryDraftFromPlan(plan: PlanItem, date: string): MemoryE
     date,
     location: plan.location ?? '',
     body: '',
-    tags: ['计划'],
-    photoIds: []
+    tags: ['计划']
   };
 }

@@ -1,18 +1,20 @@
 import { migrateLegacySpaceData } from './domain';
+import { SPACE_TIMEZONE } from './dates';
 import type { SpaceData } from '../types';
 
-const STORAGE_KEY = 'love-space-data-v2';
+const STORAGE_KEY = 'love-space-data-v3';
 const LEGACY_STORAGE_KEY = 'love-space-demo-data';
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
 
 export const EMPTY_SPACE_DATA: SpaceData = {
   schemaVersion: DATA_VERSION,
   spaceName: 'our little space',
   relationshipStart: null,
-  timezone: 'Asia/Hong_Kong',
+  timezone: SPACE_TIMEZONE,
   timeline: [],
   photos: [],
-  plans: []
+  plans: [],
+  version: 1
 };
 
 function cloneEmptySpace(): SpaceData {
@@ -20,10 +22,11 @@ function cloneEmptySpace(): SpaceData {
 }
 
 export function toPersistedSpaceData(data: SpaceData): SpaceData {
+  const normalized = normalizeSpaceData(data);
   return {
-    ...data,
+    ...normalized,
     schemaVersion: DATA_VERSION,
-    photos: data.photos.map((photo) => photo.assetKey ? { ...photo, src: '' } : photo)
+    photos: normalized.photos.map((photo) => photo.assetKey ? { ...photo, src: '' } : photo)
   };
 }
 
@@ -33,17 +36,21 @@ function isLegacyShape(value: unknown): value is Parameters<typeof migrateLegacy
 
 function normalizeSpaceData(value: unknown): SpaceData {
   if (!value || typeof value !== 'object') return cloneEmptySpace();
-  if (isLegacyShape(value)) return { ...migrateLegacySpaceData(value), schemaVersion: DATA_VERSION };
+  if (isLegacyShape(value)) {
+    const migrated = migrateLegacySpaceData(value);
+    return normalizeSpaceData({ ...migrated, schemaVersion: DATA_VERSION });
+  }
 
   const data = value as SpaceData;
   return {
     schemaVersion: DATA_VERSION,
     spaceName: data.spaceName || EMPTY_SPACE_DATA.spaceName,
     relationshipStart: data.relationshipStart || null,
-    timezone: data.timezone || EMPTY_SPACE_DATA.timezone,
-    timeline: data.timeline ?? [],
-    photos: data.photos ?? [],
-    plans: data.plans ?? []
+    timezone: SPACE_TIMEZONE,
+    timeline: (data.timeline ?? []).map((entry) => ({ ...entry, version: entry.version ?? 1 })),
+    photos: (data.photos ?? []).map((photo) => ({ ...photo, version: photo.version ?? 1 })),
+    plans: (data.plans ?? []).map((plan) => ({ ...plan, version: plan.version ?? 1 })),
+    version: data.version ?? 1
   };
 }
 
@@ -52,7 +59,7 @@ export function loadSpaceData(): SpaceData {
 
   // A new storage key prevents the old demo fixtures from reappearing on this version.
   window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-  const saved = window.localStorage.getItem(STORAGE_KEY);
+  const saved = window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem('love-space-data-v2');
   if (!saved) {
     const initial = cloneEmptySpace();
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
@@ -81,20 +88,4 @@ export function resetSpaceData(): SpaceData {
   const initial = cloneEmptySpace();
   saveSpaceData(initial);
   return initial;
-}
-
-const SESSION_KEY = 'love-space-session-v2';
-const LEGACY_SESSION_KEY = 'love-space-demo-session';
-
-export function hasDemoSession(): boolean {
-  return typeof window !== 'undefined' && window.localStorage.getItem(SESSION_KEY) === 'active';
-}
-
-export function startDemoSession(): void {
-  window.localStorage.setItem(SESSION_KEY, 'active');
-}
-
-export function endDemoSession(): void {
-  window.localStorage.removeItem(SESSION_KEY);
-  window.localStorage.removeItem(LEGACY_SESSION_KEY);
 }

@@ -8,8 +8,9 @@ type TimelineBase = {
   title: string;
   date: string;
   location?: string;
-  photoIds: string[];
   createdAt?: string;
+  version?: number;
+  updatedAt?: string;
 };
 
 export type MemoryEntry = TimelineBase & {
@@ -42,6 +43,8 @@ export type Photo = {
   timelineEntryId?: string;
   storagePath?: string;
   assetKey?: string;
+  version?: number;
+  updatedAt?: string;
 };
 
 export type PlanType = '地点' | '餐厅' | '电影' | '礼物' | '生活' | '纪念日' | '其他';
@@ -60,6 +63,8 @@ export type PlanItem = {
   priority: 'low' | 'medium' | 'high';
   assignee: '一起' | '我' | '你';
   completedAt?: string;
+  version?: number;
+  updatedAt?: string;
 };
 
 export type SpaceData = {
@@ -70,4 +75,5 @@ export type SpaceData = {
   photos: Photo[];
   plans: PlanItem[];
   schemaVersion?: number;
+  version?: number;
 };

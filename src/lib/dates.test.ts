@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCountdown, getRelationshipDuration, getNextAnnualOccurrence } from './dates';
+import { getCountdown, getRelationshipDuration, getNextAnnualOccurrence, getDateInTimezone } from './dates';
 
 describe('date calculations', () => {
   it('calculates a recurring anniversary in the current year', () => {
@@ -24,5 +24,16 @@ describe('date calculations', () => {
 
   it('returns no duration when the relationship start date is not set', () => {
     expect(getRelationshipDuration(null, new Date('2026-07-31T12:00:00Z'))).toBeUndefined();
+  });
+
+  it('uses the space timezone when deriving today from an instant', () => {
+    expect(getDateInTimezone(new Date('2026-08-02T16:30:00Z'), 'Asia/Hong_Kong')).toBe('2026-08-03');
+  });
+
+  it('uses the Hong Kong calendar date for countdowns across UTC midnight', () => {
+    const instant = new Date('2026-08-02T16:30:00Z');
+    expect(getCountdown('2026-08-03', instant)).toMatchObject({ days: 0, label: '就是今天' });
+    expect(getNextAnnualOccurrence('2022-08-03', instant)).toBe('2026-08-03');
+    expect(getRelationshipDuration('2026-08-03', instant)).toMatchObject({ years: 0, months: 0, days: 0, totalDays: 0 });
   });
 });

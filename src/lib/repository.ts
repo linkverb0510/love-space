@@ -4,12 +4,17 @@ import { createSupabaseClient } from './supabase';
 import { subscribeToSpaceChanges, type RealtimeClientLike } from './supabase-sync';
 import type { RuntimeConfig } from './runtime-config';
 import { EMPTY_SPACE_DATA, loadSpaceData, saveSpaceData } from './storage';
+import { ConflictError } from './errors';
+import { SPACE_TIMEZONE } from './dates';
 import type { MemoryEntry, MilestoneEntry, Photo, PlanItem, SpaceData, TimelineEntry } from '../types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const PHOTO_BUCKET = 'love-space-photos';
 
-export type SpaceSettings = Pick<SpaceData, 'spaceName' | 'relationshipStart' | 'timezone'>;
+export type SpaceSettings = Pick<SpaceData, 'spaceName' | 'relationshipStart' | 'timezone'> & {
+  version?: number;
+  updatedAt?: string;
+};
 
 export type PhotoMetadata = {
   id: string;
@@ -20,18 +25,14 @@ export type PhotoMetadata = {
 
 export type SpaceRepository = {
   load(): Promise<SpaceData>;
-  saveSettings(settings: SpaceSettings): Promise<void>;
-  saveTimelineEntry(entry: TimelineEntry): Promise<void>;
-  deleteTimelineEntry(id: string): Promise<void>;
-  savePlan(plan: PlanItem): Promise<void>;
-  deletePlan(id: string): Promise<void>;
+  saveSettings(settings: SpaceSettings, expectedVersion?: number): Promise<SpaceSettings>;
+  saveTimelineEntry(entry: TimelineEntry): Promise<TimelineEntry>;
+  deleteTimelineEntry(id: string, expectedVersion: number): Promise<void>;
+  savePlan(plan: PlanItem): Promise<PlanItem>;
+  deletePlan(id: string, expectedVersion: number): Promise<void>;
   uploadPhoto(file: File, metadata: PhotoMetadata): Promise<Photo>;
-  updatePhoto(photo: Photo): Promise<void>;
-  deletePhoto(photo: Photo): Promise<void>;
-};
-
-export type SnapshotSpaceRepository = SpaceRepository & {
-  saveSnapshot(data: SpaceData): Promise<void>;
+  updatePhoto(photo: Photo): Promise<Photo>;
+  deletePhoto(photo: Photo, expectedVersion: number): Promise<void>;
   subscribe?(onData: (data: SpaceData) => void): () => void;
 };
 
@@ -49,6 +50,14 @@ export function toPhotoMetadata(photo: Photo): PhotoMetadata {
   };
 }
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function nextVersion(current?: number): number {
+  return (current ?? 0) + 1;
+}
+
 function replaceTimelineEntry(data: SpaceData, entry: TimelineEntry): SpaceData {
   const exists = data.timeline.some((item) => item.id === entry.id);
   return { ...data, timeline: exists ? data.timeline.map((item) => item.id === entry.id ? entry : item) : [entry, ...data.timeline] };
@@ -59,21 +68,36 @@ function replacePlan(data: SpaceData, plan: PlanItem): SpaceData {
   return { ...data, plans: exists ? data.plans.map((item) => item.id === plan.id ? plan : item) : [plan, ...data.plans] };
 }
 
-class LocalSpaceRepository implements SnapshotSpaceRepository {
+function assertLocalVersion(actual: number | undefined, expected: number | undefined, id: string): void {
+  if (expected !== undefined && actual !== expected) throw new ConflictError(id);
+}
+
+class LocalSpaceRepository implements SpaceRepository {
   async load(): Promise<SpaceData> {
     return loadSpaceData();
   }
 
-  async saveSettings(settings: SpaceSettings): Promise<void> {
-    saveSpaceData({ ...loadSpaceData(), ...settings });
-  }
-
-  async saveTimelineEntry(entry: TimelineEntry): Promise<void> {
-    saveSpaceData(replaceTimelineEntry(loadSpaceData(), entry));
-  }
-
-  async deleteTimelineEntry(id: string): Promise<void> {
+  async saveSettings(settings: SpaceSettings, expectedVersion?: number): Promise<SpaceSettings> {
     const data = loadSpaceData();
+    assertLocalVersion(data.version, expectedVersion, 'space');
+    const saved = { ...settings, version: nextVersion(data.version), updatedAt: nowIso() };
+    saveSpaceData({ ...data, ...saved });
+    return saved;
+  }
+
+  async saveTimelineEntry(entry: TimelineEntry): Promise<TimelineEntry> {
+    const data = loadSpaceData();
+    const existing = data.timeline.find((item) => item.id === entry.id);
+    assertLocalVersion(existing?.version, entry.version, entry.id);
+    const saved = { ...entry, version: nextVersion(existing?.version), updatedAt: nowIso() } as TimelineEntry;
+    saveSpaceData(replaceTimelineEntry(data, saved));
+    return saved;
+  }
+
+  async deleteTimelineEntry(id: string, expectedVersion: number): Promise<void> {
+    const data = loadSpaceData();
+    const existing = data.timeline.find((entry) => entry.id === id);
+    assertLocalVersion(existing?.version, expectedVersion, id);
     saveSpaceData({
       ...data,
       timeline: data.timeline.filter((entry) => entry.id !== id),
@@ -81,36 +105,58 @@ class LocalSpaceRepository implements SnapshotSpaceRepository {
     });
   }
 
-  async savePlan(plan: PlanItem): Promise<void> {
-    saveSpaceData(replacePlan(loadSpaceData(), plan));
+  async savePlan(plan: PlanItem): Promise<PlanItem> {
+    const data = loadSpaceData();
+    const existing = data.plans.find((item) => item.id === plan.id);
+    assertLocalVersion(existing?.version, plan.version, plan.id);
+    const saved = { ...plan, version: nextVersion(existing?.version), updatedAt: nowIso() };
+    saveSpaceData(replacePlan(data, saved));
+    return saved;
   }
 
-  async deletePlan(id: string): Promise<void> {
+  async deletePlan(id: string, expectedVersion: number): Promise<void> {
     const data = loadSpaceData();
+    const existing = data.plans.find((plan) => plan.id === id);
+    assertLocalVersion(existing?.version, expectedVersion, id);
     saveSpaceData({ ...data, plans: data.plans.filter((plan) => plan.id !== id) });
   }
 
   async uploadPhoto(file: File, metadata: PhotoMetadata): Promise<Photo> {
     const blob = await prepareImageFile(file);
     await saveLocalAsset(metadata.id, blob);
-    return {
+    const photo = {
       ...metadata,
       src: URL.createObjectURL(blob),
-      assetKey: metadata.id
+      assetKey: metadata.id,
+      version: 1,
+      updatedAt: nowIso()
     };
-  }
-
-  async updatePhoto(photo: Photo): Promise<void> {
     const data = loadSpaceData();
-    saveSpaceData({ ...data, photos: data.photos.map((item) => item.id === photo.id ? photo : item) });
+    try {
+      saveSpaceData({ ...data, photos: [photo, ...data.photos] });
+    } catch (error) {
+      await deleteLocalAsset(metadata.id);
+      URL.revokeObjectURL(photo.src);
+      throw error;
+    }
+    return photo;
   }
 
-  async deletePhoto(photo: Photo): Promise<void> {
+  async updatePhoto(photo: Photo): Promise<Photo> {
+    const data = loadSpaceData();
+    const existing = data.photos.find((item) => item.id === photo.id);
+    assertLocalVersion(existing?.version, photo.version, photo.id);
+    const saved = { ...photo, version: nextVersion(existing?.version), updatedAt: nowIso() };
+    saveSpaceData({ ...data, photos: data.photos.map((item) => item.id === photo.id ? saved : item) });
+    return saved;
+  }
+
+  async deletePhoto(photo: Photo, expectedVersion: number): Promise<void> {
+    const data = loadSpaceData();
+    const existing = data.photos.find((item) => item.id === photo.id);
+    assertLocalVersion(existing?.version, expectedVersion, photo.id);
     if (photo.assetKey) await deleteLocalAsset(photo.assetKey);
-  }
-
-  async saveSnapshot(data: SpaceData): Promise<void> {
-    saveSpaceData(data);
+    saveSpaceData({ ...data, photos: data.photos.filter((item) => item.id !== photo.id) });
   }
 }
 
@@ -121,6 +167,8 @@ type SpaceRow = {
   relationship_start: string | null;
   timezone: string;
   public_demo: boolean;
+  version: number;
+  updated_at: string;
 };
 
 type TimelineRow = {
@@ -135,9 +183,10 @@ type TimelineRow = {
   repeat_annual: boolean | null;
   time: string | null;
   note: string | null;
-  photo_ids: string[] | null;
   system_role: 'relationship-start' | null;
   created_at: string | null;
+  version: number;
+  updated_at: string;
 };
 
 type PlanRow = {
@@ -153,6 +202,8 @@ type PlanRow = {
   priority: PlanItem['priority'];
   assignee: PlanItem['assignee'];
   completed_at: string | null;
+  version: number;
+  updated_at: string;
 };
 
 type PhotoRow = {
@@ -161,10 +212,19 @@ type PhotoRow = {
   caption: string;
   date: string;
   timeline_entry_id: string | null;
+  version: number;
+  updated_at: string;
 };
 
-function assertSupabaseResult<T>(result: { data: T; error: { message: string } | null }): T {
+type SupabaseResult<T> = { data: T; error: { message: string } | null };
+
+function assertSupabaseResult<T>(result: SupabaseResult<T>): T {
   if (result.error) throw new Error(result.error.message);
+  return result.data;
+}
+
+function assertVersionedRow<T>(result: SupabaseResult<T>, id: string): T {
+  if (result.error || !result.data) throw new ConflictError(id);
   return result.data;
 }
 
@@ -174,8 +234,9 @@ function mapTimelineRow(row: TimelineRow): TimelineEntry {
     title: row.title,
     date: row.date,
     location: row.location ?? undefined,
-    photoIds: row.photo_ids ?? [],
-    createdAt: row.created_at ?? undefined
+    createdAt: row.created_at ?? undefined,
+    version: row.version,
+    updatedAt: row.updated_at
   };
 
   if (row.type === 'memory') {
@@ -211,13 +272,37 @@ function mapPlanRow(row: PlanRow): PlanItem {
     note: row.note ?? undefined,
     priority: row.priority,
     assignee: row.assignee,
-    completedAt: row.completed_at ?? undefined
+    completedAt: row.completed_at ?? undefined,
+    version: row.version,
+    updatedAt: row.updated_at
   };
 }
 
-export class SupabaseSpaceRepository implements SnapshotSpaceRepository {
+function mapPhotoRow(row: PhotoRow, src: string): Photo {
+  return {
+    id: row.id,
+    src,
+    storagePath: row.storage_path,
+    caption: row.caption,
+    date: row.date,
+    timelineEntryId: row.timeline_entry_id ?? undefined,
+    version: row.version,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapSpaceSettings(row: SpaceRow): SpaceSettings {
+  return {
+    spaceName: row.name,
+    relationshipStart: row.relationship_start,
+    timezone: row.timezone,
+    version: row.version,
+    updatedAt: row.updated_at
+  };
+}
+
+export class SupabaseSpaceRepository implements SpaceRepository {
   private space?: SpaceRow;
-  private snapshotQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly client: SupabaseClient, private readonly config: RuntimeConfig) {}
 
@@ -230,7 +315,7 @@ export class SupabaseSpaceRepository implements SnapshotSpaceRepository {
       this.space = lookup.data as SpaceRow;
       return this.space;
     }
-    if (!this.config.publicDemo) throw new Error('Supabase 空间不存在，请先配置 VITE_SPACE_PATH。');
+    if (!this.config.publicDemo) throw new Error('Supabase 私密空间不存在，请先完成账号和空间初始化。');
 
     const created = await this.client.from('spaces').insert({
       slug: this.config.spacePath,
@@ -258,20 +343,14 @@ export class SupabaseSpaceRepository implements SnapshotSpaceRepository {
     const timelineRows = assertSupabaseResult(timelineResult) as TimelineRow[];
     const plansRows = assertSupabaseResult(plansResult) as PlanRow[];
     const photoRows = assertSupabaseResult(photosResult) as PhotoRow[];
-    const photos = await Promise.all(photoRows.map(async (row) => ({
-      id: row.id,
-      src: await this.signedPhotoUrl(row.storage_path),
-      storagePath: row.storage_path,
-      caption: row.caption,
-      date: row.date,
-      timelineEntryId: row.timeline_entry_id ?? undefined
-    })));
+    const photos = await Promise.all(photoRows.map(async (row) => mapPhotoRow(row, await this.signedPhotoUrl(row.storage_path))));
 
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
+      version: space.version,
       spaceName: space.name,
       relationshipStart: space.relationship_start,
-      timezone: space.timezone,
+      timezone: SPACE_TIMEZONE,
       timeline: timelineRows.map(mapTimelineRow),
       photos,
       plans: plansRows.map(mapPlanRow)
@@ -305,18 +384,22 @@ export class SupabaseSpaceRepository implements SnapshotSpaceRepository {
     };
   }
 
-  async saveSettings(settings: SpaceSettings): Promise<void> {
+  async saveSettings(settings: SpaceSettings, expectedVersion?: number): Promise<SpaceSettings> {
     const space = await this.ensureSpace();
+    const version = expectedVersion ?? space.version;
     const result = await this.client.from('spaces').update({
       name: settings.spaceName,
       relationship_start: settings.relationshipStart,
-      timezone: settings.timezone
-    }).eq('id', space.id).select('id').single();
-    assertSupabaseResult(result);
-    this.space = { ...space, name: settings.spaceName, relationship_start: settings.relationshipStart, timezone: settings.timezone };
+      timezone: settings.timezone,
+      version: version + 1,
+      updated_at: nowIso()
+    }).eq('id', space.id).eq('version', version).select('*').single();
+    const saved = assertVersionedRow(result as SupabaseResult<SpaceRow>, space.id);
+    this.space = saved;
+    return mapSpaceSettings(saved);
   }
 
-  async saveTimelineEntry(entry: TimelineEntry): Promise<void> {
+  async saveTimelineEntry(entry: TimelineEntry): Promise<TimelineEntry> {
     const space = await this.ensureSpace();
     const row = {
       id: entry.id,
@@ -331,23 +414,30 @@ export class SupabaseSpaceRepository implements SnapshotSpaceRepository {
       repeat_annual: entry.type === 'milestone' ? entry.repeatAnnual : false,
       time: entry.type === 'milestone' ? entry.time ?? null : null,
       note: entry.type === 'milestone' ? entry.note ?? null : null,
-      photo_ids: entry.photoIds,
       system_role: entry.type === 'milestone' ? entry.systemRole ?? null : null,
-      created_at: entry.createdAt ?? new Date().toISOString()
+      created_at: entry.createdAt ?? nowIso(),
+      version: entry.version === undefined ? 1 : entry.version + 1,
+      updated_at: nowIso()
     };
-    const result = await this.client.from('timeline_entries').upsert(row);
-    assertSupabaseResult(result);
+
+    if (entry.version === undefined) {
+      const result = await this.client.from('timeline_entries').insert(row).select('*').single();
+      return mapTimelineRow(assertVersionedRow(result as SupabaseResult<TimelineRow>, entry.id));
+    }
+
+    const result = await this.client.from('timeline_entries').update({ ...row, id: undefined, space_id: undefined }).eq('space_id', space.id).eq('id', entry.id).eq('version', entry.version).select('*').single();
+    return mapTimelineRow(assertVersionedRow(result as SupabaseResult<TimelineRow>, entry.id));
   }
 
-  async deleteTimelineEntry(id: string): Promise<void> {
+  async deleteTimelineEntry(id: string, expectedVersion: number): Promise<void> {
     const space = await this.ensureSpace();
-    const result = await this.client.from('timeline_entries').delete().eq('space_id', space.id).eq('id', id);
-    assertSupabaseResult(result);
+    const result = await this.client.from('timeline_entries').delete().eq('space_id', space.id).eq('id', id).eq('version', expectedVersion).select('id').single();
+    assertVersionedRow(result as SupabaseResult<{ id: string }>, id);
   }
 
-  async savePlan(plan: PlanItem): Promise<void> {
+  async savePlan(plan: PlanItem): Promise<PlanItem> {
     const space = await this.ensureSpace();
-    const result = await this.client.from('plans').upsert({
+    const row = {
       id: plan.id,
       space_id: space.id,
       title: plan.title,
@@ -360,79 +450,82 @@ export class SupabaseSpaceRepository implements SnapshotSpaceRepository {
       note: plan.note ?? null,
       priority: plan.priority,
       assignee: plan.assignee,
-      completed_at: plan.completedAt ?? null
-    });
-    assertSupabaseResult(result);
+      completed_at: plan.completedAt ?? null,
+      version: plan.version === undefined ? 1 : plan.version + 1,
+      updated_at: nowIso()
+    };
+
+    if (plan.version === undefined) {
+      const result = await this.client.from('plans').insert(row).select('*').single();
+      return mapPlanRow(assertVersionedRow(result as SupabaseResult<PlanRow>, plan.id));
+    }
+
+    const result = await this.client.from('plans').update({ ...row, id: undefined, space_id: undefined }).eq('space_id', space.id).eq('id', plan.id).eq('version', plan.version).select('*').single();
+    return mapPlanRow(assertVersionedRow(result as SupabaseResult<PlanRow>, plan.id));
   }
 
-  async deletePlan(id: string): Promise<void> {
+  async deletePlan(id: string, expectedVersion: number): Promise<void> {
     const space = await this.ensureSpace();
-    const result = await this.client.from('plans').delete().eq('space_id', space.id).eq('id', id);
-    assertSupabaseResult(result);
+    const result = await this.client.from('plans').delete().eq('space_id', space.id).eq('id', id).eq('version', expectedVersion).select('id').single();
+    assertVersionedRow(result as SupabaseResult<{ id: string }>, id);
   }
 
   async uploadPhoto(file: File, metadata: PhotoMetadata): Promise<Photo> {
     const blob = await prepareImageFile(file);
     const space = await this.ensureSpace();
     const storagePath = buildPhotoStoragePath(space.id, metadata.id);
-    const upload = await this.client.storage.from(PHOTO_BUCKET).upload(storagePath, blob, { contentType: 'image/webp', upsert: true });
+    const upload = await this.client.storage.from(PHOTO_BUCKET).upload(storagePath, blob, { contentType: 'image/webp', upsert: false });
     if (upload.error) throw new Error(upload.error.message);
 
-    const result = await this.client.from('photos').upsert({
+    const result = await this.client.from('photos').insert({
       id: metadata.id,
       space_id: space.id,
       storage_path: storagePath,
       caption: metadata.caption,
       date: metadata.date,
-      timeline_entry_id: metadata.timelineEntryId ?? null
+      timeline_entry_id: metadata.timelineEntryId ?? null,
+      version: 1,
+      updated_at: nowIso()
     }).select('*').single();
     if (result.error) {
       await this.client.storage.from(PHOTO_BUCKET).remove([storagePath]);
       throw new Error(result.error.message);
     }
 
-    return { ...metadata, src: await this.signedPhotoUrl(storagePath), storagePath };
+    return mapPhotoRow(result.data as PhotoRow, await this.signedPhotoUrl(storagePath));
   }
 
-  async updatePhoto(photo: Photo): Promise<void> {
+  async updatePhoto(photo: Photo): Promise<Photo> {
     const space = await this.ensureSpace();
+    const nextUpdatedAt = nowIso();
     const result = await this.client.from('photos').update({
       caption: photo.caption,
       date: photo.date,
-      timeline_entry_id: photo.timelineEntryId ?? null
-    }).eq('space_id', space.id).eq('id', photo.id);
-    assertSupabaseResult(result);
+      timeline_entry_id: photo.timelineEntryId ?? null,
+      version: (photo.version ?? 0) + 1,
+      updated_at: nextUpdatedAt
+    }).eq('space_id', space.id).eq('id', photo.id).eq('version', photo.version ?? 1).select('*').single();
+    const row = assertVersionedRow(result as SupabaseResult<PhotoRow>, photo.id);
+    return mapPhotoRow(row, photo.src);
   }
 
-  async deletePhoto(photo: Photo): Promise<void> {
+  async deletePhoto(photo: Photo, expectedVersion: number): Promise<void> {
     const space = await this.ensureSpace();
-    const result = await this.client.from('photos').delete().eq('space_id', space.id).eq('id', photo.id);
-    assertSupabaseResult(result);
-    if (photo.storagePath) {
-      const removed = await this.client.storage.from(PHOTO_BUCKET).remove([photo.storagePath]);
-      if (removed.error) throw new Error(removed.error.message);
+    const current = await this.client.from('photos').select('id, storage_path, version').eq('space_id', space.id).eq('id', photo.id).eq('version', expectedVersion).single();
+    const currentRow = assertVersionedRow(current as SupabaseResult<{ id: string; storage_path: string; version: number }>, photo.id);
+    const removed = await this.client.storage.from(PHOTO_BUCKET).remove([currentRow.storage_path]);
+    if (removed.error) throw new Error(`照片文件删除失败，请再次点击删除重试。${removed.error.message}`);
+
+    const result = await this.client.from('photos').delete().eq('space_id', space.id).eq('id', photo.id).eq('version', expectedVersion).select('id').single();
+    try {
+      assertVersionedRow(result as SupabaseResult<{ id: string }>, photo.id);
+    } catch (error) {
+      throw new Error(`照片文件已删除，但元数据清理失败，请再次点击删除重试。${error instanceof Error ? error.message : ''}`);
     }
-  }
-
-  async saveSnapshot(data: SpaceData): Promise<void> {
-    const next = this.snapshotQueue.then(() => this.syncSnapshot(data));
-    this.snapshotQueue = next.catch(() => undefined);
-    return next;
-  }
-
-  private async syncSnapshot(data: SpaceData): Promise<void> {
-    const remote = await this.load();
-    await this.saveSettings(data);
-    await Promise.all(data.timeline.map((entry) => this.saveTimelineEntry(entry)));
-    await Promise.all(data.plans.map((plan) => this.savePlan(plan)));
-    await Promise.all(data.photos.filter((photo) => photo.storagePath).map((photo) => this.updatePhoto(photo)));
-    await Promise.all(remote.timeline.filter((entry) => !data.timeline.some((item) => item.id === entry.id)).map((entry) => this.deleteTimelineEntry(entry.id)));
-    await Promise.all(remote.plans.filter((plan) => !data.plans.some((item) => item.id === plan.id)).map((plan) => this.deletePlan(plan.id)));
-    await Promise.all(remote.photos.filter((photo) => !data.photos.some((item) => item.id === photo.id)).map((photo) => this.deletePhoto(photo)));
   }
 }
 
-export function createSpaceRepository(config: RuntimeConfig): SnapshotSpaceRepository {
+export function createSpaceRepository(config: RuntimeConfig): SpaceRepository {
   const client = config.dataMode === 'supabase' ? createSupabaseClient(config) : null;
   return client ? new SupabaseSpaceRepository(client, config) : new LocalSpaceRepository();
 }

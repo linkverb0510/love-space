@@ -23,6 +23,8 @@
 body { margin: 0; min-width: 320px; background: var(--cream); }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .52; }
+.button:disabled, .icon-button:disabled, .photo-action:disabled, .check-button:disabled { transform: none; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid rgba(104, 134, 162, .32); outline-offset: 2px; }
 h1, h2, h3, p { margin: 0; }
 h1, h2, h3, strong { letter-spacing: 0; }
@@ -94,7 +96,14 @@ h1 em, h2 em, h3 em { font-family: 'Playfair Display', Georgia, serif; font-weig
 .topbar h2 { margin-top: 5px; font-size: 20px; font-weight: 600; }
 .mobile-kicker { display: none; color: var(--muted); font-size: 9px; }
 .topbar-actions { display: flex; align-items: center; gap: 13px; }
-.sync-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; }
+.sync-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; white-space: nowrap; }
+.sync-status.sync-saving .status-dot { background: var(--coral); animation: timeline-pulse 1.2s ease-in-out infinite; }
+.sync-status.sync-conflict, .sync-status.sync-error { color: var(--coral); }
+.sync-banner { display: flex; align-items: center; gap: 9px; max-width: 900px; margin: 0 auto 18px; padding: 10px 14px; border: 1px solid #dbe4df; background: rgba(255,255,255,.72); color: var(--muted); font-size: 12px; line-height: 1.5; }
+.sync-banner .status-dot { flex: 0 0 auto; }
+.sync-banner-saving { color: var(--teal); }
+.sync-banner-conflict, .sync-banner-error { border-color: rgba(209,116,126,.45); color: #9d4e5b; background: rgba(255,244,244,.9); }
+.sync-banner-conflict .status-dot, .sync-banner-error .status-dot { background: var(--coral); }
 .avatar-button { position: relative; display: grid; place-items: center; width: 33px; height: 33px; border-radius: 50%; background: var(--yellow); color: #69592b; font-family: 'Playfair Display', serif; font-size: 16px; }
 .avatar-button span { position: absolute; right: -3px; bottom: -2px; display: grid; place-items: center; width: 14px; height: 14px; border: 2px solid var(--cream); border-radius: 50%; background: var(--teal); color: white; font-family: system-ui; font-size: 10px; }
 .page-content { width: min(1240px, 100%); margin: 0 auto; padding: 42px clamp(24px, 5vw, 74px) 80px; }
@@ -263,6 +272,7 @@ h1 em, h2 em, h3 em { font-family: 'Playfair Display', Georgia, serif; font-weig
 .settings-item { display: flex; align-items: center; gap: 15px; padding: 21px 0; border-bottom: 1px solid var(--line); }
 .settings-item-button { width: 100%; border-top: 0; border-right: 0; border-left: 0; background: transparent; color: inherit; text-align: left; }
 .settings-item-button:hover { background: rgba(229,237,242,.3); }
+.settings-item-button:disabled { cursor: not-allowed; opacity: .7; }
 .settings-icon { display: grid; place-items: center; flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; background: var(--teal-soft); color: var(--teal); }
 .settings-item > div:nth-child(2) { display: grid; flex: 1; gap: 5px; }
 .settings-item strong { font-size: 13px; }
@@ -273,6 +283,7 @@ h1 em, h2 em, h3 em { font-family: 'Playfair Display', Georgia, serif; font-weig
 .toggle.is-on { background: var(--teal); }
 .toggle.is-on span { transform: translateX(16px); }
 .settings-danger { display: flex; align-items: center; justify-content: space-between; max-width: 800px; gap: 20px; padding: 25px 0; }
+.settings-readonly-note { display: block; border-top: 1px solid var(--line); }
 .settings-danger h3 { margin-top: 7px; font-size: 17px; }
 .settings-danger p { max-width: 500px; margin-top: 7px; color: var(--muted); font-size: 11px; line-height: 1.65; }
 .settings-actions { display: flex; flex: 0 0 auto; gap: 8px; }
@@ -338,7 +349,8 @@ h1 em, h2 em, h3 em { font-family: 'Playfair Display', Georgia, serif; font-weig
   .topbar { min-height: 77px; padding: 0 20px; }
   .mobile-kicker { display: block; }
   .topbar h2 { display: none; }
-  .sync-status { display: none; }
+  .sync-status { max-width: 128px; overflow: hidden; font-size: 8px; text-overflow: ellipsis; }
+  .sync-banner { margin: 0 0 14px; font-size: 11px; }
   .page-content { padding: 26px 16px 45px; }
   .dashboard-stack, .view-stack { gap: 26px; }
   .welcome-band { min-height: 210px; padding: 25px 22px; }

@@ -1,88 +1,88 @@
 # Our Little Space
 
-一个只属于两个人的回忆空间。当前仓库是移动优先的 PWA 演示版，核心页面收敛为首页、B1 相册页轴、照片、计划和设置。
+一个只属于两个人的回忆空间。当前版本包含首页、B1 相册页轴、照片、计划和设置，并将公开展示入口与私密共享入口分开。
 
-## 当前功能
+## 运行入口
 
-- 普通回忆和重要日子共用一条连续时间线
-- 年度纪念日只保留一个原始节点，并动态显示下一次倒计时
-- 时间线节点支持查看、编辑和删除；恋爱开始日为空时不会生成系统节点
-- B1 相册页轴支持滚动显现、节点高亮、照片轻微缩放，并尊重减少动效设置
-- 照片墙支持多选批量上传、图片压缩、进度、失败重试、编辑和删除
-- 计划统一承载地点、餐厅、电影、礼物和共同待办
-- 已完成计划可以预填充一条回忆，但只有主动保存后才会创建
-- 首页展示恋爱时长、下一个重要日子、最近回忆、照片和进行中的计划
+- 公开预览：`https://linkverb0510.github.io/love-space/`
+  - 空数据、只读、不连接 Supabase。
+  - 用于展示 UI，不要上传真实照片。
+- 私密共享：`https://linkverb0510.github.io/love-space/?space=private`
+  - 使用 Supabase Auth、RLS 和 private Storage。
+  - 两个人输入同一个共享密码，密码由 Supabase 服务端验证。
 
-## Run locally
+## 功能
+
+- 普通回忆和重要日子共用 B1 相册页轴。
+- 空开始日期不会生成关系起点节点，也不会计算恋爱时长。
+- 图片上传前限制为图片类型和 20MB，最长边压缩到 2048px WebP。
+- 本地模式使用 localStorage 保存元数据、IndexedDB 保存图片 Blob。
+- Supabase 模式使用实体级版本写入，旧版本保存会提示冲突，不会覆盖另一台设备的数据。
+- `prefers-reduced-motion` 下关闭非必要动效；弹层支持 Escape、初始焦点和焦点循环。
+
+## 本地开发
 
 ```bash
 npm install
 npm run dev
 ```
 
-首次进入需要输入由 `VITE_SPACE_PASSWORD_HASH` 配置的固定密码。密码 hash 只在构建时注入前端，适合轻量访问门禁；公开演示的 Supabase 数据权限仍不是正式私密空间的安全边界。
-
-## Local data boundary
-
-默认本地模式使用 `localStorage` 保存空间元数据，使用 IndexedDB 保存压缩后的 WebP 图片；图片不会写入 `localStorage`。新版本会清除旧的 `love-space-demo-data` 示例键，空间首次打开为空。
-
-当前支持两种运行模式：
-
-- `VITE_DATA_MODE=local`：无需后端，每个浏览器独立保存。
-- `VITE_DATA_MODE=supabase`：从 Postgres 加载空间数据，从 private Storage bucket 加载照片。
-
-Supabase 模式需要先执行 `supabase/migrations/0001_initial.sql`，再配置 `.env.local`：
+默认 `.env` 不需要 Supabase：
 
 ```text
-VITE_DATA_MODE=supabase
-VITE_PUBLIC_DEMO=true
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
-VITE_SPACE_PATH=public-demo
-VITE_SPACE_PASSWORD_HASH=sha256-hash-of-your-password
+VITE_DATA_MODE=local
+VITE_PUBLIC_DEMO=false
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+VITE_PRIVATE_SPACE_PATH=private-space
+VITE_SHARED_AUTH_EMAIL=
 ```
 
-公开演示模式只用于展示，不承诺隐私，也不应上传真实私密照片。正式双方空间应关闭 `VITE_PUBLIC_DEMO`，创建成员关系并使用认证和 RLS。
+本地模式的数据只属于当前浏览器。正式共享空间必须使用 Supabase 模式，不要把真实照片放入本地模式后期待跨设备同步。
 
-## Permanent preview deployment
+## Supabase 初始化
 
-仓库包含 GitHub Pages 工作流。推送到 `main` 后会自动构建并发布，页面地址为：
+1. 在 Supabase Authentication -> Users 中创建专用共享账号，启用自动确认邮箱，并设置共同密码。明文密码不要发给 Codex、不要提交到 Git。
+2. 在 SQL Editor 中先执行 `supabase/migrations/0001_initial.sql`，再备份公开空间后执行 `supabase/migrations/0002_private_space.sql`。
+3. 在 SQL Editor 中查询私密空间 ID，并将共享账号加入成员表。`auth.users` 中的用户 UUID 可在 Authentication -> Users 查看：
+
+```sql
+insert into public.space_members (space_id, user_id, role)
+select id, '替换为共享账号的 auth.users.id'::uuid, 'owner'
+from public.spaces
+where slug = 'private-space'
+on conflict (space_id, user_id) do nothing;
+```
+
+4. 如果公开空间中有需要保留的内容，先完成数量校验和复制，再清除公开空间内容。迁移脚本不会自动替你复制或删除业务数据。
+5. 不要使用 `service_role` key。前端只配置 publishable/anon key，安全边界由 Auth、RLS 和 private Storage 提供。
+
+共享账号方案暂时不能区分是哪个人做了修改，也不能单独撤销其中一人的访问；未来可以把它升级为两个 Auth 账号和两个 `space_members` 成员。
+
+## GitHub Pages 部署
+
+仓库工作流 `.github/workflows/deploy-pages.yml` 会在 `main` 更新后构建并发布到：
 
 ```text
 https://linkverb0510.github.io/love-space/
 ```
 
-工作流默认使用 `VITE_DATA_MODE=supabase` 和公开演示空间；没有配置 GitHub Actions Secrets 时会自动回退为本地模式。要启用跨浏览器共享，在仓库 Settings -> Secrets and variables -> Actions 中添加：
+在仓库 Settings -> Secrets and variables -> Actions 中配置：
 
 ```text
 VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
+VITE_PRIVATE_SPACE_PATH
+VITE_SHARED_AUTH_EMAIL
 ```
 
-两者只应使用 Supabase 的 publishable/anon key，不要添加 `service_role` key。执行 `supabase/migrations/0001_initial.sql` 后，重新运行 `Deploy love space to GitHub Pages` 工作流即可。
+缺少 Supabase Secrets 时，公开根入口仍能展示空 UI，但私密入口会明确显示配置错误，不会静默伪装成“共享成功”。
 
-生成密码 hash（不要把明文密码提交到 Git）：
-
-```bash
-node -e "console.log(require('crypto').createHash('sha256').update('your-password').digest('hex'))"
-```
-
-Vercel 仍可作为备用预览平台。构建命令为 `npm run build`，输出目录为 `dist`：
-
-```bash
-npm run build
-npx vercel deploy dist --yes --prod --project <your-vercel-project>
-```
-
-发布构建产物可以避免把本地开发文件带到线上。没有 Supabase 配置时使用本地模式部署，链接可以展示完整 UI，但数据按浏览器隔离。Supabase 环境变量应在 Vercel 项目设置中配置，不要提交 `.env.local` 或密钥。
-
-生产密钥不得提交到 Git。 
-
-## Verification
+## 验证
 
 ```bash
 npm test
 npm run build
 ```
 
-日期规则和数据迁移测试位于 `src/lib/*.test.ts`。PWA 使用标准 `manifest.webmanifest` 和 `public/sw.js`。
+Service Worker 只缓存同源应用壳，不缓存 Supabase API、Auth、Storage 或照片 URL。

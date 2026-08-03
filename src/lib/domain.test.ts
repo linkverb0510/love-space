@@ -116,8 +116,7 @@ describe('simplified relationship domain', () => {
       date: '2026-08-01',
       location: '',
       body: '',
-      tags: ['计划'],
-      photoIds: []
+      tags: ['计划']
     });
   });
 });

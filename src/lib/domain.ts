@@ -3,10 +3,22 @@ import type {
   MemoryEntry,
   MilestoneEntry,
   PlanItem,
+  Photo,
   SpaceData,
   TimelineDisplayEntry,
   TimelineEntry
 } from '../types';
+import { normalizeAssignee } from './roles';
+
+export type PhotoDayGroup = {
+  date: string;
+  photos: Photo[];
+};
+
+export type PhotoMonthGroup = {
+  month: string;
+  days: PhotoDayGroup[];
+};
 
 type LegacyEvent = {
   id: string;
@@ -88,7 +100,7 @@ function migrateLegacyTask(task: LegacyTask): PlanItem {
     status: task.done ? '已完成' : '计划中',
     dueDate: task.dueDate,
     priority: task.priority,
-    assignee: task.assignee,
+    assignee: normalizeAssignee(task.assignee),
     completedAt: task.done ? task.dueDate : undefined
   };
 }
@@ -103,7 +115,7 @@ function migrateLegacyCollection(item: LegacyCollection): PlanItem {
     note: item.note,
     image: item.image,
     priority: 'medium',
-    assignee: '一起'
+    assignee: 'both'
   };
 }
 
@@ -196,6 +208,26 @@ export function getTimelineEntries(space: SpaceData, now = new Date()): Timeline
       if (dateOrder !== 0) return dateOrder;
       return (b.createdAt ?? b.id).localeCompare(a.createdAt ?? a.id);
     });
+}
+
+export function groupPhotosByDate(photos: Photo[]): PhotoMonthGroup[] {
+  const sorted = [...photos].sort((a, b) => {
+    const dateOrder = b.date.localeCompare(a.date);
+    if (dateOrder !== 0) return dateOrder;
+    return (b.createdAt ?? b.id).localeCompare(a.createdAt ?? a.id);
+  });
+  const months = new Map<string, PhotoMonthGroup>();
+
+  sorted.forEach((photo) => {
+    const month = photo.date.slice(0, 7);
+    const group = months.get(month) ?? { month, days: [] };
+    const day = group.days.find((item) => item.date === photo.date);
+    if (day) day.photos.push(photo);
+    else group.days.push({ date: photo.date, photos: [photo] });
+    months.set(month, group);
+  });
+
+  return Array.from(months.values());
 }
 
 export function getNextMilestone(space: SpaceData, now = new Date()): TimelineDisplayEntry | undefined {

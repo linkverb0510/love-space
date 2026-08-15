@@ -1,12 +1,18 @@
-import { deleteLocalAsset, saveLocalAsset } from './local-media';
-import { prepareImageFile } from './media';
+import {
+  deleteLocalAssets,
+  getLocalPhotoAssetKey,
+  loadLocalPhotoAsset,
+  saveLocalAssets
+} from './local-media';
+import { preparePhotoAssets, type PreparedPhotoAssets } from './media';
 import { createSupabaseClient } from './supabase';
 import { subscribeToSpaceChanges, type RealtimeClientLike } from './supabase-sync';
 import type { RuntimeConfig } from './runtime-config';
 import { EMPTY_SPACE_DATA, loadSpaceData, saveSpaceData } from './storage';
 import { ConflictError } from './errors';
 import { SPACE_TIMEZONE } from './dates';
-import type { MemoryEntry, MilestoneEntry, Photo, PlanItem, SpaceData, TimelineEntry } from '../types';
+import { normalizeAssignee, normalizeRole } from './roles';
+import type { MemoryEntry, MilestoneEntry, Photo, PhotoAssetVariant, PlanItem, SpaceData, SpaceRole, TimelineEntry } from '../types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const PHOTO_BUCKET = 'love-space-photos';
@@ -21,7 +27,10 @@ export type PhotoMetadata = {
   caption: string;
   date: string;
   timelineEntryId?: string;
+  createdByRole?: SpaceRole;
 };
+
+export type PhotoUploadInput = File | PreparedPhotoAssets;
 
 export type SpaceRepository = {
   load(): Promise<SpaceData>;
@@ -30,7 +39,8 @@ export type SpaceRepository = {
   deleteTimelineEntry(id: string, expectedVersion: number): Promise<void>;
   savePlan(plan: PlanItem): Promise<PlanItem>;
   deletePlan(id: string, expectedVersion: number): Promise<void>;
-  uploadPhoto(file: File, metadata: PhotoMetadata): Promise<Photo>;
+  uploadPhoto(input: PhotoUploadInput, metadata: PhotoMetadata): Promise<Photo>;
+  getPhotoAssetUrl(photo: Photo, variant: PhotoAssetVariant): Promise<string | undefined>;
   updatePhoto(photo: Photo): Promise<Photo>;
   deletePhoto(photo: Photo, expectedVersion: number): Promise<void>;
   subscribe?(onData: (data: SpaceData) => void): () => void;
@@ -41,12 +51,19 @@ export function buildPhotoStoragePath(spacePath: string, photoId: string): strin
   return `${normalizedSpacePath}/${photoId}.webp`;
 }
 
+export function buildPhotoAssetStoragePath(spacePath: string, photoId: string, variant: 'thumbnail' | 'original' | 'motion', extension: string): string {
+  const normalizedSpacePath = spacePath.replace(/^\/+|\/+$/g, '') || 'public-demo';
+  const suffix = variant === 'thumbnail' ? '-thumb' : variant === 'motion' ? '-motion' : '-original';
+  return `${normalizedSpacePath}/${photoId}${suffix}.${extension.replace(/^\./, '').toLowerCase()}`;
+}
+
 export function toPhotoMetadata(photo: Photo): PhotoMetadata {
   return {
     id: photo.id,
     caption: photo.caption,
     date: photo.date,
-    timelineEntryId: photo.timelineEntryId
+    timelineEntryId: photo.timelineEntryId,
+    createdByRole: photo.createdByRole
   };
 }
 
@@ -70,6 +87,26 @@ function replacePlan(data: SpaceData, plan: PlanItem): SpaceData {
 
 function assertLocalVersion(actual: number | undefined, expected: number | undefined, id: string): void {
   if (expected !== undefined && actual !== expected) throw new ConflictError(id);
+}
+
+async function resolvePhotoAssets(input: PhotoUploadInput): Promise<PreparedPhotoAssets> {
+  return 'original' in input && 'display' in input && 'thumbnail' in input
+    ? input
+    : preparePhotoAssets(input);
+}
+
+function photoAssetKeys(photo: Photo): string[] {
+  return [photo.assetKey, photo.thumbnailAssetKey, photo.originalAssetKey, photo.motionAssetKey]
+    .filter((key): key is string => Boolean(key));
+}
+
+function extensionForMime(mime: string | undefined, fallbackName: string): string {
+  if (mime === 'image/jpeg') return 'jpg';
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/heic' || mime === 'image/heif') return 'heic';
+  if (mime === 'video/quicktime') return 'mov';
+  if (mime === 'video/mp4') return 'mp4';
+  return fallbackName.split('.').pop()?.toLowerCase() || 'bin';
 }
 
 class LocalSpaceRepository implements SpaceRepository {
@@ -121,13 +158,35 @@ class LocalSpaceRepository implements SpaceRepository {
     saveSpaceData({ ...data, plans: data.plans.filter((plan) => plan.id !== id) });
   }
 
-  async uploadPhoto(file: File, metadata: PhotoMetadata): Promise<Photo> {
-    const blob = await prepareImageFile(file);
-    await saveLocalAsset(metadata.id, blob);
-    const photo = {
+  async uploadPhoto(input: PhotoUploadInput, metadata: PhotoMetadata): Promise<Photo> {
+    const assets = await resolvePhotoAssets(input);
+    const assetKey = `${metadata.id}-display`;
+    const thumbnailAssetKey = `${metadata.id}-thumbnail`;
+    const originalAssetKey = `${metadata.id}-original`;
+    const motionAssetKey = assets.motion ? `${metadata.id}-motion` : undefined;
+    await saveLocalAssets({
+      [assetKey]: assets.display,
+      [thumbnailAssetKey]: assets.thumbnail,
+      [originalAssetKey]: assets.original,
+      ...(assets.motion && motionAssetKey ? { [motionAssetKey]: assets.motion } : {})
+    });
+    const photo: Photo = {
       ...metadata,
-      src: URL.createObjectURL(blob),
-      assetKey: metadata.id,
+      createdByRole: metadata.createdByRole ?? 'unknown',
+      src: URL.createObjectURL(assets.display),
+      thumbnailSrc: URL.createObjectURL(assets.thumbnail),
+      assetKey,
+      thumbnailAssetKey,
+      originalAssetKey,
+      motionAssetKey,
+      mediaKind: assets.motion ? 'live' : 'image',
+      previewAvailable: assets.previewAvailable,
+      width: assets.width,
+      height: assets.height,
+      originalMime: assets.original.type || undefined,
+      motionMime: assets.motion?.type || undefined,
+      originalBytes: assets.original.size,
+      createdAt: nowIso(),
       version: 1,
       updatedAt: nowIso()
     };
@@ -135,11 +194,16 @@ class LocalSpaceRepository implements SpaceRepository {
     try {
       saveSpaceData({ ...data, photos: [photo, ...data.photos] });
     } catch (error) {
-      await deleteLocalAsset(metadata.id);
-      URL.revokeObjectURL(photo.src);
+      await deleteLocalAssets(photoAssetKeys(photo));
+      [photo.src, photo.thumbnailSrc].forEach((source) => { if (source) URL.revokeObjectURL(source); });
       throw error;
     }
     return photo;
+  }
+
+  async getPhotoAssetUrl(photo: Photo, variant: PhotoAssetVariant): Promise<string | undefined> {
+    const blob = await loadLocalPhotoAsset(photo, variant);
+    return blob ? URL.createObjectURL(blob) : undefined;
   }
 
   async updatePhoto(photo: Photo): Promise<Photo> {
@@ -155,7 +219,7 @@ class LocalSpaceRepository implements SpaceRepository {
     const data = loadSpaceData();
     const existing = data.photos.find((item) => item.id === photo.id);
     assertLocalVersion(existing?.version, expectedVersion, photo.id);
-    if (photo.assetKey) await deleteLocalAsset(photo.assetKey);
+    await deleteLocalAssets(photoAssetKeys(photo));
     saveSpaceData({ ...data, photos: data.photos.filter((item) => item.id !== photo.id) });
   }
 }
@@ -184,6 +248,7 @@ type TimelineRow = {
   time: string | null;
   note: string | null;
   system_role: 'relationship-start' | null;
+  created_by_role?: string | null;
   created_at: string | null;
   version: number;
   updated_at: string;
@@ -201,6 +266,7 @@ type PlanRow = {
   note: string | null;
   priority: PlanItem['priority'];
   assignee: PlanItem['assignee'];
+  created_by_role?: string | null;
   completed_at: string | null;
   version: number;
   updated_at: string;
@@ -209,9 +275,21 @@ type PlanRow = {
 type PhotoRow = {
   id: string;
   storage_path: string;
+  thumbnail_storage_path?: string | null;
+  original_storage_path?: string | null;
+  motion_storage_path?: string | null;
   caption: string;
   date: string;
   timeline_entry_id: string | null;
+  created_by_role?: string | null;
+  media_kind?: 'image' | 'live' | null;
+  preview_available?: boolean | null;
+  width?: number | null;
+  height?: number | null;
+  original_mime?: string | null;
+  motion_mime?: string | null;
+  original_bytes?: number | null;
+  created_at?: string | null;
   version: number;
   updated_at: string;
 };
@@ -235,6 +313,7 @@ function mapTimelineRow(row: TimelineRow): TimelineEntry {
     date: row.date,
     location: row.location ?? undefined,
     createdAt: row.created_at ?? undefined,
+    createdByRole: normalizeRole(row.created_by_role),
     version: row.version,
     updatedAt: row.updated_at
   };
@@ -271,21 +350,35 @@ function mapPlanRow(row: PlanRow): PlanItem {
     image: row.image ?? undefined,
     note: row.note ?? undefined,
     priority: row.priority,
-    assignee: row.assignee,
+    assignee: normalizeAssignee(row.assignee),
+    createdByRole: normalizeRole(row.created_by_role),
     completedAt: row.completed_at ?? undefined,
     version: row.version,
     updatedAt: row.updated_at
   };
 }
 
-function mapPhotoRow(row: PhotoRow, src: string): Photo {
+function mapPhotoRow(row: PhotoRow, src: string, thumbnailSrc = src): Photo {
   return {
     id: row.id,
     src,
+    thumbnailSrc,
     storagePath: row.storage_path,
+    thumbnailStoragePath: row.thumbnail_storage_path ?? undefined,
+    originalStoragePath: row.original_storage_path ?? undefined,
+    motionStoragePath: row.motion_storage_path ?? undefined,
     caption: row.caption,
     date: row.date,
     timelineEntryId: row.timeline_entry_id ?? undefined,
+    createdByRole: normalizeRole(row.created_by_role),
+    mediaKind: row.media_kind ?? (row.motion_storage_path ? 'live' : 'image'),
+    previewAvailable: row.preview_available ?? true,
+    width: row.width ?? undefined,
+    height: row.height ?? undefined,
+    originalMime: row.original_mime ?? undefined,
+    motionMime: row.motion_mime ?? undefined,
+    originalBytes: row.original_bytes ?? undefined,
+    createdAt: row.created_at ?? undefined,
     version: row.version,
     updatedAt: row.updated_at
   };
@@ -333,6 +426,14 @@ export class SupabaseSpaceRepository implements SpaceRepository {
     return result.data.signedUrl;
   }
 
+  private async signedPhotoUrls(storagePaths: string[]): Promise<Map<string, string>> {
+    const paths = Array.from(new Set(storagePaths.filter(Boolean)));
+    if (paths.length === 0) return new Map();
+    const result = await this.client.storage.from(PHOTO_BUCKET).createSignedUrls(paths, 60 * 60);
+    if (result.error) throw new Error(result.error.message);
+    return new Map((result.data ?? []).flatMap((item) => item.signedUrl ? [[item.path, item.signedUrl] as [string, string]] : []));
+  }
+
   async load(): Promise<SpaceData> {
     const space = await this.ensureSpace();
     const [timelineResult, plansResult, photosResult] = await Promise.all([
@@ -343,10 +444,17 @@ export class SupabaseSpaceRepository implements SpaceRepository {
     const timelineRows = assertSupabaseResult(timelineResult) as TimelineRow[];
     const plansRows = assertSupabaseResult(plansResult) as PlanRow[];
     const photoRows = assertSupabaseResult(photosResult) as PhotoRow[];
-    const photos = await Promise.all(photoRows.map(async (row) => mapPhotoRow(row, await this.signedPhotoUrl(row.storage_path))));
+    const displayPaths = photoRows.map((row) => row.storage_path);
+    const thumbnailPaths = photoRows.map((row) => row.thumbnail_storage_path ?? row.storage_path);
+    const signedUrls = await this.signedPhotoUrls([...displayPaths, ...thumbnailPaths]);
+    const photos = photoRows.map((row) => {
+      const displayPath = row.storage_path;
+      const thumbnailPath = row.thumbnail_storage_path ?? displayPath;
+      return mapPhotoRow(row, signedUrls.get(displayPath) ?? '', signedUrls.get(thumbnailPath) ?? signedUrls.get(displayPath) ?? '');
+    });
 
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       version: space.version,
       spaceName: space.name,
       relationshipStart: space.relationship_start,
@@ -355,6 +463,17 @@ export class SupabaseSpaceRepository implements SpaceRepository {
       photos,
       plans: plansRows.map(mapPlanRow)
     };
+  }
+
+  async getPhotoAssetUrl(photo: Photo, variant: PhotoAssetVariant): Promise<string | undefined> {
+    const storagePath = variant === 'thumbnail'
+      ? photo.thumbnailStoragePath ?? photo.storagePath
+      : variant === 'original'
+        ? photo.originalStoragePath
+        : variant === 'motion'
+          ? photo.motionStoragePath
+          : photo.storagePath;
+    return storagePath ? this.signedPhotoUrl(storagePath) : undefined;
   }
 
   subscribe(onData: (data: SpaceData) => void): () => void {
@@ -415,6 +534,7 @@ export class SupabaseSpaceRepository implements SpaceRepository {
       time: entry.type === 'milestone' ? entry.time ?? null : null,
       note: entry.type === 'milestone' ? entry.note ?? null : null,
       system_role: entry.type === 'milestone' ? entry.systemRole ?? null : null,
+      created_by_role: entry.createdByRole ?? 'unknown',
       created_at: entry.createdAt ?? nowIso(),
       version: entry.version === undefined ? 1 : entry.version + 1,
       updated_at: nowIso()
@@ -450,6 +570,7 @@ export class SupabaseSpaceRepository implements SpaceRepository {
       note: plan.note ?? null,
       priority: plan.priority,
       assignee: plan.assignee,
+      created_by_role: plan.createdByRole ?? 'unknown',
       completed_at: plan.completedAt ?? null,
       version: plan.version === undefined ? 1 : plan.version + 1,
       updated_at: nowIso()
@@ -470,29 +591,61 @@ export class SupabaseSpaceRepository implements SpaceRepository {
     assertVersionedRow(result as SupabaseResult<{ id: string }>, id);
   }
 
-  async uploadPhoto(file: File, metadata: PhotoMetadata): Promise<Photo> {
-    const blob = await prepareImageFile(file);
+  async uploadPhoto(input: PhotoUploadInput, metadata: PhotoMetadata): Promise<Photo> {
+    const assets = await resolvePhotoAssets(input);
     const space = await this.ensureSpace();
     const storagePath = buildPhotoStoragePath(space.id, metadata.id);
-    const upload = await this.client.storage.from(PHOTO_BUCKET).upload(storagePath, blob, { contentType: 'image/webp', upsert: false });
-    if (upload.error) throw new Error(upload.error.message);
+    const thumbnailPath = buildPhotoAssetStoragePath(space.id, metadata.id, 'thumbnail', 'webp');
+    const originalPath = buildPhotoAssetStoragePath(space.id, metadata.id, 'original', extensionForMime(assets.original.type, assets.original.name));
+    const motionPath = assets.motion
+      ? buildPhotoAssetStoragePath(space.id, metadata.id, 'motion', extensionForMime(assets.motion.type, assets.motion.name))
+      : undefined;
+    const uploads = [
+      { path: originalPath, body: assets.original, contentType: assets.original.type || 'application/octet-stream' },
+      { path: thumbnailPath, body: assets.thumbnail, contentType: 'image/webp' },
+      { path: storagePath, body: assets.display, contentType: assets.display.type || 'image/webp' },
+      ...(assets.motion && motionPath ? [{ path: motionPath, body: assets.motion, contentType: assets.motion.type || 'video/mp4' }] : [])
+    ];
+    const uploadedPaths: string[] = [];
+    try {
+      for (const asset of uploads) {
+        const upload = await this.client.storage.from(PHOTO_BUCKET).upload(asset.path, asset.body, { contentType: asset.contentType, upsert: false });
+        if (upload.error) throw new Error(upload.error.message);
+        uploadedPaths.push(asset.path);
+      }
 
-    const result = await this.client.from('photos').insert({
-      id: metadata.id,
-      space_id: space.id,
-      storage_path: storagePath,
-      caption: metadata.caption,
-      date: metadata.date,
-      timeline_entry_id: metadata.timelineEntryId ?? null,
-      version: 1,
-      updated_at: nowIso()
-    }).select('*').single();
-    if (result.error) {
-      await this.client.storage.from(PHOTO_BUCKET).remove([storagePath]);
-      throw new Error(result.error.message);
+      const result = await this.client.from('photos').insert({
+        id: metadata.id,
+        space_id: space.id,
+        storage_path: storagePath,
+        thumbnail_storage_path: thumbnailPath,
+        original_storage_path: originalPath,
+        motion_storage_path: motionPath ?? null,
+        caption: metadata.caption,
+        date: metadata.date,
+        timeline_entry_id: metadata.timelineEntryId ?? null,
+        created_by_role: metadata.createdByRole ?? 'unknown',
+        media_kind: assets.motion ? 'live' : 'image',
+        preview_available: assets.previewAvailable,
+        width: assets.width ?? null,
+        height: assets.height ?? null,
+        original_mime: assets.original.type || null,
+        motion_mime: assets.motion?.type || null,
+        original_bytes: assets.original.size,
+        version: 1,
+        updated_at: nowIso()
+      }).select('*').single();
+      if (result.error) throw new Error(result.error.message);
+
+      const [displaySrc, thumbnailSrc] = await Promise.all([
+        this.signedPhotoUrl(storagePath),
+        this.signedPhotoUrl(thumbnailPath)
+      ]);
+      return mapPhotoRow(result.data as PhotoRow, displaySrc, thumbnailSrc);
+    } catch (error) {
+      if (uploadedPaths.length > 0) await this.client.storage.from(PHOTO_BUCKET).remove(uploadedPaths);
+      throw error;
     }
-
-    return mapPhotoRow(result.data as PhotoRow, await this.signedPhotoUrl(storagePath));
   }
 
   async updatePhoto(photo: Photo): Promise<Photo> {
@@ -502,6 +655,7 @@ export class SupabaseSpaceRepository implements SpaceRepository {
       caption: photo.caption,
       date: photo.date,
       timeline_entry_id: photo.timelineEntryId ?? null,
+      created_by_role: photo.createdByRole ?? 'unknown',
       version: (photo.version ?? 0) + 1,
       updated_at: nextUpdatedAt
     }).eq('space_id', space.id).eq('id', photo.id).eq('version', photo.version ?? 1).select('*').single();
@@ -511,9 +665,11 @@ export class SupabaseSpaceRepository implements SpaceRepository {
 
   async deletePhoto(photo: Photo, expectedVersion: number): Promise<void> {
     const space = await this.ensureSpace();
-    const current = await this.client.from('photos').select('id, storage_path, version').eq('space_id', space.id).eq('id', photo.id).eq('version', expectedVersion).single();
-    const currentRow = assertVersionedRow(current as SupabaseResult<{ id: string; storage_path: string; version: number }>, photo.id);
-    const removed = await this.client.storage.from(PHOTO_BUCKET).remove([currentRow.storage_path]);
+    const current = await this.client.from('photos').select('id, storage_path, thumbnail_storage_path, original_storage_path, motion_storage_path, version').eq('space_id', space.id).eq('id', photo.id).eq('version', expectedVersion).single();
+    const currentRow = assertVersionedRow(current as SupabaseResult<{ id: string; storage_path: string; thumbnail_storage_path?: string | null; original_storage_path?: string | null; motion_storage_path?: string | null; version: number }>, photo.id);
+    const storagePaths = [currentRow.storage_path, currentRow.thumbnail_storage_path, currentRow.original_storage_path, currentRow.motion_storage_path]
+      .filter((path): path is string => Boolean(path));
+    const removed = await this.client.storage.from(PHOTO_BUCKET).remove(storagePaths);
     if (removed.error) throw new Error(`照片文件删除失败，请再次点击删除重试。${removed.error.message}`);
 
     const result = await this.client.from('photos').delete().eq('space_id', space.id).eq('id', photo.id).eq('version', expectedVersion).select('id').single();

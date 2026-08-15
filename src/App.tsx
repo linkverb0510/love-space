@@ -8,6 +8,8 @@ import {
   ChevronRight,
   Circle,
   Clock3,
+  Download,
+  Film,
   Heart,
   Home,
   Image as ImageIcon,
@@ -19,23 +21,27 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Play,
   Settings2,
   Sparkles,
   Trash2,
   Upload,
   X
 } from 'lucide-react';
-import { createMemoryDraftFromPlan, getNextMilestone, getTimelineEntries } from './lib/domain';
+import { createMemoryDraftFromPlan, getNextMilestone, getTimelineEntries, groupPhotosByDate } from './lib/domain';
 import { getDateInTimezone, getRelationshipDuration, SPACE_TIMEZONE } from './lib/dates';
 import { readRelationshipStart } from './lib/editing';
-import { validateImageFile } from './lib/media';
-import { deleteLocalAsset, hydrateLocalPhotoSources } from './lib/local-media';
+import { inferPhotoDate, pairPhotoFiles, preparePhotoAssets, validateMediaFile } from './lib/media';
+import { deleteLocalAssets, hydrateLocalPhotoSources, revokeLocalPhotoSources } from './lib/local-media';
 import { createSpaceRepository } from './lib/repository';
 import { signInWithSharedPassword, restoreAuthSession, signOut as signOutAuth } from './lib/auth';
 import { ConflictError } from './lib/errors';
 import { getRuntimeConfig, type RuntimeConfig } from './lib/runtime-config';
 import { createSupabaseClient } from './lib/supabase';
 import { isPrivateSpaceEntry } from './lib/runtime-path';
+import { getActiveRole, getRoleLabel, saveActiveRole, type ActiveRole } from './lib/roles';
+import { LolitaPageDecor, LolitaPaperDecor, MaterialSticker } from './components/LolitaDecor';
+import { MATERIAL_ASSETS } from './lib/visual-assets';
 import {
   EMPTY_SPACE_DATA,
   loadSpaceData,
@@ -45,13 +51,15 @@ import type {
   MemoryEntry,
   MilestoneEntry,
   Photo,
+  PhotoAssetVariant,
   PlanItem,
   PlanStatus,
   PlanType,
   SpaceData,
   TimelineDisplayEntry,
   TimelineEntry,
-  ViewKey
+  ViewKey,
+  SpaceRole
 } from './types';
 import type { Session } from '@supabase/supabase-js';
 
@@ -68,6 +76,7 @@ type SheetState =
   | { type: 'memory-form'; entry?: MemoryEntry; draft?: MemoryEntry }
   | { type: 'milestone-form'; entry?: MilestoneEntry }
   | { type: 'plan-form'; plan?: PlanItem }
+  | { type: 'photo-detail'; photo: Photo }
   | { type: 'photo-form'; photo: Photo }
   | { type: 'settings-form' }
   | null;
@@ -76,9 +85,14 @@ type UploadItem = {
   id: string;
   name: string;
   file: File;
-  progress: number;
+  motion?: File;
   status: 'preparing' | 'uploading' | 'done' | 'failed';
+  stage: '等待处理' | '生成展示版' | '保存媒体' | '已完成' | '失败';
   error?: string;
+  retryable?: boolean;
+  timelineEntryId?: string;
+  fallbackDate?: string;
+  createdByRole?: SpaceRole;
 };
 
 function newId(prefix: string): string {
@@ -125,7 +139,7 @@ function App() {
   }, [privateMode, supabaseClient]);
 
   if (!privateMode) {
-    return <SpaceApp config={{ ...config, dataMode: 'local', publicDemo: false, spacePath: 'public-preview' }} readOnly onLock={() => undefined} />;
+    return <SpaceApp config={{ ...config, dataMode: 'local', publicDemo: false, spacePath: 'local-development' }} readOnly={!import.meta.env.DEV} onLock={() => undefined} />;
   }
   if (!supabaseClient) return <AccessError text="私密空间尚未配置 Supabase，请先完成部署环境设置。" />;
   if (authError) return <AccessError text={authError} />;
@@ -220,10 +234,14 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
   const [toast, setToast] = useState('');
   const [focusEntryId, setFocusEntryId] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [activeRole, setActiveRole] = useState<ActiveRole>(() => getActiveRole(config.spacePath));
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(remoteMode ? 'loading' : 'clean');
   const activeSheet = useRef<SheetState>(null);
+  const pendingUploads = useRef<UploadItem[]>([]);
+  const activeUploadCount = useRef(0);
 
   useEffect(() => { activeSheet.current = sheet; }, [sheet]);
+  useEffect(() => { saveActiveRole(config.spacePath, activeRole); }, [activeRole, config.spacePath]);
 
   useEffect(() => {
     if (!remoteMode) return;
@@ -327,11 +345,13 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
     }
   }
 
-  async function saveTimelineEntry(entry: TimelineEntry) {
-    const saved = await saveMutation(() => repository.saveTimelineEntry(entry));
+  async function saveTimelineEntry(entry: TimelineEntry, attachments: File[] = []) {
+    const preparedEntry = { ...entry, createdByRole: entry.createdByRole ?? activeRole } as TimelineEntry;
+    const saved = await saveMutation(() => repository.saveTimelineEntry(preparedEntry));
     if (!saved) return;
     updateData((current) => replaceTimeline(current, saved), saved.type === 'memory' ? '回忆已经放进时间线。' : '重要日子已经记下了。');
     setSheet(null);
+    if (attachments.length > 0) queuePhotoFiles(attachments, { timelineEntryId: saved.id, fallbackDate: saved.date, createdByRole: saved.createdByRole });
   }
 
   async function deleteTimelineEntry(entry: TimelineDisplayEntry) {
@@ -354,7 +374,8 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
   }
 
   async function savePlan(plan: PlanItem) {
-    const normalized = plan.status === '已完成' && !plan.completedAt ? { ...plan, completedAt: todayString(data.timezone) } : plan.status !== '已完成' ? { ...plan, completedAt: undefined } : plan;
+    const withRole = plan.createdByRole ? plan : { ...plan, createdByRole: activeRole };
+    const normalized = withRole.status === '已完成' && !withRole.completedAt ? { ...withRole, completedAt: todayString(data.timezone) } : withRole.status !== '已完成' ? { ...withRole, completedAt: undefined } : withRole;
     const saved = await saveMutation(() => repository.savePlan(normalized));
     if (!saved) return;
     updateData((current) => replacePlan(current, saved), '计划已经更新。');
@@ -385,8 +406,10 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
       return true;
     });
     if (!deleted) return;
-    if (photo.assetKey && photo.src.startsWith('blob:')) URL.revokeObjectURL(photo.src);
-    if (photo.assetKey) void deleteLocalAsset(photo.assetKey);
+    revokeLocalPhotoSources(photo);
+    if (photo.assetKey || photo.thumbnailAssetKey || photo.originalAssetKey || photo.motionAssetKey) {
+      void deleteLocalAssets([photo.assetKey, photo.thumbnailAssetKey, photo.originalAssetKey, photo.motionAssetKey].filter((key): key is string => Boolean(key)));
+    }
     updateData((current) => ({
       ...current,
       photos: current.photos.filter((item) => item.id !== photo.id)
@@ -401,18 +424,74 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
     }
     try {
       setSyncStatus('saving');
-      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'preparing', progress: 20 } : upload));
+      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'preparing', stage: '生成展示版' } : upload));
       const photoId = newId('photo');
-      const photo = await repository.uploadPhoto(item.file, { id: photoId, caption: item.name, date: todayString(data.timezone) });
-      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'uploading', progress: 75 } : upload));
+      const photoDate = await inferPhotoDate(item.file, item.fallbackDate ?? todayString(data.timezone));
+      const assets = await preparePhotoAssets(item.file, item.motion);
+      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'uploading', stage: '保存媒体' } : upload));
+      const photo = await repository.uploadPhoto(assets, { id: photoId, caption: item.name, date: photoDate, timelineEntryId: item.timelineEntryId, createdByRole: item.createdByRole ?? activeRole });
       updateData((current) => ({ ...current, photos: [photo, ...current.photos] }));
-      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, progress: 100, status: 'done' } : upload));
+      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'done', stage: '已完成' } : upload));
       setSyncStatus('clean');
       setToast('照片已经加入照片墙。');
     } catch (error) {
       handleFailure(error);
-      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'failed', error: error instanceof Error ? error.message : '读取失败' } : upload));
+      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'failed', stage: '失败', error: error instanceof Error ? error.message : '读取失败' } : upload));
     }
+  }
+
+  function drainUploadQueue() {
+    while (activeUploadCount.current < 2 && pendingUploads.current.length > 0) {
+      const item = pendingUploads.current.shift();
+      if (!item) return;
+      activeUploadCount.current += 1;
+      void startUpload(item).finally(() => {
+        activeUploadCount.current -= 1;
+        drainUploadQueue();
+      });
+    }
+  }
+
+  function enqueueUploads(items: UploadItem[]) {
+    pendingUploads.current.push(...items);
+    drainUploadQueue();
+  }
+
+  function queuePhotoFiles(files: File[], options: Pick<UploadItem, 'timelineEntryId' | 'fallbackDate' | 'createdByRole'> = {}) {
+    const items: UploadItem[] = [];
+    pairPhotoFiles(files).forEach((pair) => {
+      if (!pair.image) {
+        if (pair.motion) items.push({
+          id: newId('upload'),
+          name: pair.motion.name,
+          file: pair.motion,
+          status: 'failed',
+          stage: '失败',
+          error: '找不到同名照片，未保存动态片段。',
+          retryable: false,
+          ...options
+        });
+        setToast(`${pair.motion?.name ?? pair.stem}：请同时选择同名照片作为动态封面。`);
+        return;
+      }
+      const validationError = validateMediaFile(pair.image) ?? (pair.motion ? validateMediaFile(pair.motion) : undefined);
+      if (validationError) {
+        setToast(`${pair.image.name}：${validationError}`);
+        return;
+      }
+      items.push({
+        id: newId('upload'),
+        name: pair.motion ? `${pair.image.name} · ${pair.motion.name}` : pair.image.name,
+        file: pair.image,
+        motion: pair.motion,
+        status: 'preparing',
+        stage: '等待处理',
+        retryable: true,
+        ...options
+      });
+    });
+    setUploads((current) => [...items, ...current]);
+    enqueueUploads(items.filter((item) => item.status !== 'failed'));
   }
 
   function addPhotos(event: ChangeEvent<HTMLInputElement>) {
@@ -420,25 +499,15 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
       event.target.value = '';
       return;
     }
-    const files = Array.from(event.target.files ?? []);
-    const items: UploadItem[] = [];
-    files.forEach((file) => {
-      const validationError = validateImageFile(file);
-      if (validationError) {
-        setToast(`${file.name}：${validationError}`);
-        return;
-      }
-      items.push({ id: newId('upload'), name: file.name, file, progress: 0, status: 'preparing' });
-    });
-    setUploads((current) => [...items, ...current]);
-    items.forEach(startUpload);
+    queuePhotoFiles(Array.from(event.target.files ?? []), { createdByRole: activeRole });
     event.target.value = '';
   }
 
   function retryUpload(item: UploadItem) {
-    const retry = { ...item, progress: 0, status: 'preparing' as const, error: undefined };
+    if (item.retryable === false) return;
+    const retry = { ...item, status: 'preparing' as const, stage: '等待处理' as const, error: undefined };
     setUploads((current) => current.map((upload) => upload.id === item.id ? retry : upload));
-    void startUpload(retry);
+    enqueueUploads([retry]);
   }
 
   async function resetSpace() {
@@ -448,8 +517,8 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
     try {
       if (!remoteMode) {
         data.photos.forEach((photo) => {
-          if (photo.assetKey) void deleteLocalAsset(photo.assetKey);
-          if (photo.assetKey && photo.src.startsWith('blob:')) URL.revokeObjectURL(photo.src);
+          revokeLocalPhotoSources(photo);
+          void deleteLocalAssets([photo.assetKey, photo.thumbnailAssetKey, photo.originalAssetKey, photo.motionAssetKey].filter((key): key is string => Boolean(key)));
         });
         setData(resetSpaceData());
       } else {
@@ -480,6 +549,7 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
   const recentEntry = timeline.find((entry) => entry.type === 'memory') ?? timeline[0];
   const recentPhoto = recentEntry ? data.photos.find((photo) => photo.timelineEntryId === recentEntry.id) ?? data.photos[0] : data.photos[0];
   const editingReady = !readOnly && dataReady;
+  const lolitaSurface = view === 'timeline' ? 'timeline' : view === 'photos' ? 'photos' : 'home';
 
   return (
     <div className="app-shell">
@@ -490,21 +560,23 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
          <div className="sidebar-bottom">{!readOnly && <button className="quiet-button" onClick={onLock}><LockKeyhole size={17} />锁定空间</button>}</div>
       </aside>
       <main className="main-content">
-         <header className="topbar"><div><span className="mobile-kicker">OUR LITTLE SPACE</span><h2>{pageTitle}</h2></div><div className="topbar-actions"><SyncStatusBadge status={readOnly ? 'clean' : syncStatus} remoteMode={remoteMode} readOnly={readOnly} /><button className="avatar-button" title="设置" aria-label="设置" onClick={() => setView('settings')}>A<span>+</span></button></div></header>
+         <header className="topbar"><div><span className="mobile-kicker">OUR LITTLE SPACE</span><h2>{pageTitle}</h2></div><div className="topbar-actions"><SyncStatusBadge status={readOnly ? 'clean' : syncStatus} remoteMode={remoteMode} readOnly={readOnly} /><button className={`avatar-button role-${activeRole}`} title={`当前身份 ${getRoleLabel(activeRole)}，打开设置`} aria-label={`当前身份 ${getRoleLabel(activeRole)}，打开设置`} onClick={() => setView('settings')}><span className={`role-avatar role-${activeRole}`}>{getRoleLabel(activeRole)}</span><span>+</span></button></div></header>
          {!readOnly && syncStatus !== 'clean' && <div className={`sync-banner sync-banner-${syncStatus}`} role={syncStatus === 'error' || syncStatus === 'conflict' ? 'alert' : 'status'}><span className="status-dot" /><span>{syncStatus === 'loading' ? '共享内容加载中，暂时不能编辑。' : syncStatus === 'saving' ? '正在保存最新修改…' : syncStatus === 'conflict' ? '内容已被另一台设备修改，请刷新后重试。' : '同步失败，请检查网络后重试。'}</span></div>}
          <div className="page-content">
-           {view === 'home' && <Dashboard data={data} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} timezone={data.timezone} readOnly={readOnly} canWrite={editingReady} openView={openView} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onAddPlan={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onSetRelationshipStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onTogglePlan={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} />}
+           <LolitaPageDecor surface={lolitaSurface} />
+           {view === 'home' && <Dashboard data={data} activeRole={activeRole} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} timezone={data.timezone} readOnly={readOnly} canWrite={editingReady} openView={openView} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onAddPlan={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onSetRelationshipStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onTogglePlan={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} />}
            {view === 'timeline' && <TimelineView entries={timeline} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onOpen={(entry) => setSheet({ type: 'timeline-detail', entry })} onEdit={(entry) => setSheet(entry.type === 'memory' ? { type: 'memory-form', entry } : { type: 'milestone-form', entry })} onDelete={(entry) => void deleteTimelineEntry(entry)} />}
-           {view === 'photos' && <PhotosView photos={data.photos} uploads={uploads} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onUpload={addPhotos} onEdit={(photo) => setSheet({ type: 'photo-form', photo })} onDelete={(photo) => void deletePhoto(photo)} onClearUpload={(id) => setUploads((current) => current.filter((item) => item.id !== id))} onRetry={retryUpload} />}
-           {view === 'plans' && <PlansView plans={data.plans} readOnly={readOnly} disabled={!editingReady} onAdd={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onEdit={(plan) => setSheet({ type: 'plan-form', plan })} onDelete={(plan) => void deletePlan(plan)} onToggle={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} onWriteMemory={(plan) => { if (editingReady) setSheet({ type: 'memory-form', draft: createMemoryDraftFromPlan(plan, todayString(data.timezone)) }); else canWrite(); }} />}
-           {view === 'settings' && <SettingsView data={data} publicDemo={config.publicDemo} remoteMode={remoteMode} readOnly={readOnly} onReset={resetSpace} onEditStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onLock={onLock} />}
+           {view === 'photos' && <PhotosView photos={data.photos} uploads={uploads} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onUpload={addPhotos} onOpen={(photo) => setSheet({ type: 'photo-detail', photo })} onOpenTimeline={(entryId) => openView('timeline', entryId)} onClearUpload={(id) => setUploads((current) => current.filter((item) => item.id !== id))} onRetry={retryUpload} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} />}
+           {view === 'plans' && <PlansView plans={data.plans} readOnly={readOnly} disabled={!editingReady} onAdd={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onEdit={(plan) => setSheet({ type: 'plan-form', plan })} onDelete={(plan) => void deletePlan(plan)} onToggle={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} onWriteMemory={(plan) => { if (editingReady) setSheet({ type: 'memory-form', draft: { ...createMemoryDraftFromPlan(plan, todayString(data.timezone)), createdByRole: activeRole } }); else canWrite(); }} />}
+           {view === 'settings' && <SettingsView data={data} activeRole={activeRole} publicDemo={config.publicDemo} remoteMode={remoteMode} readOnly={readOnly} onReset={resetSpace} onEditStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onRoleChange={setActiveRole} onLock={onLock} />}
         </div>
       </main>
       <nav className="mobile-nav" aria-label="移动端导航">{navItems.map((item) => <NavButton key={item.key} item={item} active={view === item.key} onClick={() => setView(item.key)} compact />)}</nav>
        {sheet?.type === 'timeline-detail' && <TimelineDetailSheet entry={sheet.entry} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet(sheet.entry.type === 'memory' ? { type: 'memory-form', entry: sheet.entry } : { type: 'milestone-form', entry: sheet.entry })} onDelete={() => void deleteTimelineEntry(sheet.entry)} />}
-      {sheet?.type === 'memory-form' && <MemoryForm entry={sheet.entry} draft={sheet.draft} onClose={() => setSheet(null)} onSubmit={saveTimelineEntry} />}
-      {sheet?.type === 'milestone-form' && <MilestoneForm entry={sheet.entry} onClose={() => setSheet(null)} onSubmit={saveTimelineEntry} />}
-      {sheet?.type === 'plan-form' && <PlanForm plan={sheet.plan} onClose={() => setSheet(null)} onSubmit={savePlan} />}
+      {sheet?.type === 'memory-form' && <MemoryForm entry={sheet.entry} draft={sheet.draft} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={(memory, attachments) => void saveTimelineEntry(memory, attachments)} />}
+      {sheet?.type === 'milestone-form' && <MilestoneForm entry={sheet.entry} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={saveTimelineEntry} />}
+      {sheet?.type === 'plan-form' && <PlanForm plan={sheet.plan} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={savePlan} />}
+      {sheet?.type === 'photo-detail' && <PhotoDetailSheet photo={sheet.photo} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet({ type: 'photo-form', photo: sheet.photo })} onDelete={() => void deletePhoto(sheet.photo)} onOpenTimeline={(entryId) => { setSheet(null); openView('timeline', entryId); }} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} />}
       {sheet?.type === 'photo-form' && <PhotoForm photo={sheet.photo} timeline={timeline} onClose={() => setSheet(null)} onSubmit={savePhoto} />}
       {sheet?.type === 'settings-form' && <RelationshipSettingsForm relationshipStart={data.relationshipStart} onClose={() => setSheet(null)} onSubmit={saveRelationshipStart} />}
       {toast && <div className="toast" role="status"><Check size={17} />{toast}</div>}
@@ -517,12 +589,28 @@ function NavButton({ item, active, onClick, compact = false }: { item: typeof na
   return <button className={`nav-button ${active ? 'active' : ''} ${compact ? 'compact' : ''}`} onClick={onClick}><Icon size={compact ? 19 : 18} /><span>{item.label}</span></button>;
 }
 
-function Dashboard({ data, relationship, nextMilestone, recentEntry, recentPhoto, timezone, readOnly, canWrite, openView, onAddMemory, onAddMilestone, onAddPlan, onSetRelationshipStart, onTogglePlan }: { data: SpaceData; relationship: ReturnType<typeof getRelationshipDuration>; nextMilestone?: TimelineDisplayEntry; recentEntry?: TimelineDisplayEntry; recentPhoto?: Photo; timezone: string; readOnly: boolean; canWrite: boolean; openView: (view: ViewKey, id?: string) => void; onAddMemory: () => void; onAddMilestone: () => void; onAddPlan: () => void; onSetRelationshipStart: () => void; onTogglePlan: (plan: PlanItem) => void }) {
+function RoleBadge({ role, prefix = '' }: { role?: SpaceRole; prefix?: string }) {
+  const normalized = role ?? 'unknown';
+  const label = getRoleLabel(normalized);
+  return <span className="role-badge" data-role={normalized} aria-label={`${prefix}${label}`}><span className="role-badge-mark" aria-hidden="true">{normalized === 'both' ? 'L/W' : normalized === 'unknown' ? '?' : label}</span><span>{prefix}{label}</span></span>;
+}
+
+function RolePicker({ value, onChange, label = '添加者', includeBoth = true, includeUnknown = false }: { value: SpaceRole; onChange: (role: SpaceRole) => void; label?: string; includeBoth?: boolean; includeUnknown?: boolean }) {
+  const options: SpaceRole[] = ['l', 'w', ...(includeBoth ? ['both' as const] : []), ...(includeUnknown ? ['unknown' as const] : [])];
+  return <div className="role-picker" role="group" aria-label={label}><span className="label-hint">{label}</span><div className="role-picker-options">{options.map((role) => <button key={role} type="button" className={value === role ? 'selected' : ''} data-role={role} aria-pressed={value === role} onClick={() => onChange(role)}><span className="role-picker-dot" aria-hidden="true" />{getRoleLabel(role)}</button>)}</div></div>;
+}
+
+function RolePair() {
+  return <div className="role-pair" aria-label="两个人的角色"><div className="role-pair-card" data-role="l"><span className="role-pair-letter">L</span><span><strong>海蓝色的 L</strong><small>留住细节的人</small></span></div><div className="role-pair-card" data-role="w"><span className="role-pair-letter">W</span><span><strong>粉色的 W</strong><small>让日子变甜的人</small></span></div></div>;
+}
+
+function Dashboard({ data, activeRole, relationship, nextMilestone, recentEntry, recentPhoto, timezone, readOnly, canWrite, openView, onAddMemory, onAddMilestone, onAddPlan, onSetRelationshipStart, onTogglePlan }: { data: SpaceData; activeRole: ActiveRole; relationship: ReturnType<typeof getRelationshipDuration>; nextMilestone?: TimelineDisplayEntry; recentEntry?: TimelineDisplayEntry; recentPhoto?: Photo; timezone: string; readOnly: boolean; canWrite: boolean; openView: (view: ViewKey, id?: string) => void; onAddMemory: () => void; onAddMilestone: () => void; onAddPlan: () => void; onSetRelationshipStart: () => void; onTogglePlan: (plan: PlanItem) => void }) {
   const openPlans = data.plans.filter((plan) => plan.status !== '已完成' && plan.status !== '搁置');
   const today = formatDate(getDateInTimezone(new Date(), timezone), { weekday: 'long', month: 'long', day: 'numeric' });
   const planSummary = (plan: PlanItem) => plan.location ?? plan.note ?? (plan.dueDate ? formatShortDate(plan.dueDate) : '还没有补充说明');
   return <div className="dashboard-stack">
-    <section className="welcome-band"><div><span className="eyebrow">{today}</span><h1>你好，<em>你们。</em></h1><p>今天也有一些小事，值得一起记住。</p></div><div className="welcome-illustration"><span>two people,<br />one timeline</span><Heart size={48} fill="currentColor" strokeWidth={1.3} /></div></section>
+    <section className="welcome-band lolita-paper"><LolitaPaperDecor /><div className="welcome-copy"><span className="eyebrow">{today}</span><h1>你好，<em>你们。</em></h1><p>今天也有一些小事，值得一起记住。</p><div className="active-role-note"><RoleBadge role={activeRole} prefix="现在由 " /><span>记录这一刻</span></div></div><div className="welcome-illustration"><MaterialSticker asset={MATERIAL_ASSETS.strawberry} tone="rose" placement="hero" size="lg" /><span className="welcome-illustration-caption">two people,<br />one timeline</span></div></section>
+    <RolePair />
      <section className="relationship-grid"><div className="relationship-panel">{relationship ? <><div className="panel-label">我们已经</div><div className="duration"><strong>{relationship.years}</strong><span>年</span><strong>{relationship.months}</strong><span>个月</span><strong>{relationship.days}</strong><span>天</span></div><div className="duration-foot">共走过 {relationship.totalDays.toLocaleString()} 天 <span>·</span> 还会有更多</div><div className="relationship-line" /></> : <div className="relationship-empty"><div className="panel-label">OUR STARTING POINT</div><h3>还没有设置开始日</h3><p>填写后，这里会开始记录你们一起走过的时间。</p><button className="button button-light" onClick={onSetRelationshipStart} disabled={!canWrite}><CalendarDays size={16} />设置开始日</button></div>}</div><div className="anniversary-panel"><div className="panel-topline"><span className="tag tag-coral">UP NEXT</span>{nextMilestone && <button className="text-button" onClick={() => openView('timeline', nextMilestone.id)}>去时间线 <ArrowUpRight size={15} /></button>}</div><h3>{nextMilestone?.title ?? '添加一个重要日子'}</h3><p>{nextMilestone ? `${formatTimelineDate(nextMilestone, nextMilestone.nextOccurrence ?? nextMilestone.date)}${nextMilestone.location ? ` · ${nextMilestone.location}` : ''}` : '把下一个想庆祝的日子放进来。'}</p><div className="big-countdown">{nextMilestone ? <><strong>{nextMilestone.countdownDays}</strong><span>天后</span></> : <button className="button button-light" onClick={onAddMilestone} disabled={!canWrite}><Plus size={16} />添加日子</button>}</div></div></section>
     <div className="section-heading"><div><span className="eyebrow">THE STORY SO FAR</span><h2>最近发生的事</h2></div><button className="text-button" onClick={() => openView('timeline')}>查看时间线 <ArrowUpRight size={15} /></button></div>
      <section className="home-grid"><article className="memory-feature"><div className="feature-image" style={{ backgroundImage: recentPhoto ? `url(${recentPhoto.src})` : undefined }}><span className="image-caption">{recentPhoto?.caption ?? '还没有照片'}</span></div><div className="feature-copy"><div className="item-meta"><span>{recentEntry ? formatDate(recentEntry.date, { year: 'numeric', month: 'short', day: 'numeric' }) : '还没有回忆'}</span><span>{recentEntry?.location}</span></div><h3>{recentEntry?.title ?? '记录你们的第一条回忆'}</h3><p>{recentEntry?.type === 'memory' ? recentEntry.body : recentEntry?.note ?? '从一句话开始，把重要的瞬间留在这里。'}</p><div className="action-group"><button className="button button-outline" onClick={onAddMemory} disabled={!canWrite}><Plus size={16} />记录一件事</button>{recentEntry && <button className="text-button" onClick={() => openView('timeline', recentEntry.id)}>查看详情 <ArrowUpRight size={15} /></button>}</div></div></article><aside className="home-side-column"><div className="mini-section"><div className="section-heading compact-heading"><h3>接下来一起做 <span>{openPlans.length}</span></h3><button className="icon-button small" title="添加计划" aria-label="添加计划" onClick={onAddPlan} disabled={!canWrite}><Plus size={16} /></button></div>{openPlans.slice(0, 3).map((plan) => <PlanRow key={plan.id} plan={plan} onToggle={onTogglePlan} disabled={!canWrite} />)}{openPlans.length === 0 && <EmptyState text="还没有待完成的计划。" />}</div><div className="mini-section quote-section"><Sparkles size={17} /><p>把小事也认真记下来。</p><span>— 留给未来的你们</span></div></aside></section>
@@ -541,15 +629,92 @@ function TimelineItem({ entry, photos, index, readOnly, disabled, onOpen, onEdit
   const isMilestone = entry.type === 'milestone';
   const isSystem = isMilestone && Boolean(entry.systemRole);
   const date = new Date(`${entry.date}T12:00:00`);
-  return <article id={`timeline-${entry.id}`} className={`timeline-item ${isMilestone ? 'milestone-item' : ''}`} style={{ '--timeline-index': index } as CSSProperties}><div className="timeline-date"><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat('zh-CN', { month: 'short', year: 'numeric' }).format(date)}</span></div><div className="timeline-dot"><span /></div><div className="memory-entry"><div className="memory-page"><button className="timeline-content-button" onClick={() => onOpen(entry)}>{cover ? <div className="memory-cover" style={{ backgroundImage: `url(${cover.src})` }}><span>{entryPhotos.length} 张照片</span></div> : <div className="memory-cover memory-cover-empty"><ImageIcon size={22} /><span>还没有照片</span></div>}<div className="memory-page-copy"><div className="memory-entry-top"><div><span className="item-meta">{isMilestone ? <span className="timeline-kind">重要日子</span> : entry.location ?? '未记录地点'} <span>·</span> {isSystem ? '关系起点' : isMilestone && entry.repeatAnnual ? '每年重复' : '回忆'}</span><h3>{entry.title}</h3></div></div><p>{isMilestone ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{!isMilestone && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{isMilestone && entry.nextOccurrence && <div className="milestone-countdown"><CalendarDays size={14} />下一次 {formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</div>}</div></button></div><div className="entry-actions">{!readOnly && !isSystem && <button className="icon-button subtle" title="编辑" aria-label={`编辑${entry.title}`} onClick={() => onEdit(entry)} disabled={disabled}><Pencil size={15} /></button>}{!readOnly && !isSystem && <button className="icon-button subtle danger-icon" title="删除" aria-label={`删除${entry.title}`} onClick={() => onDelete(entry)} disabled={disabled}><Trash2 size={15} /></button>}<button className="icon-button subtle" title="查看详情" aria-label={`查看${entry.title}`} onClick={() => onOpen(entry)}><MoreHorizontal size={16} /></button></div></div></article>;
+  return <article id={`timeline-${entry.id}`} className={`timeline-item ${isMilestone ? 'milestone-item' : ''}`} style={{ '--timeline-index': index } as CSSProperties}><div className="timeline-date"><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat('zh-CN', { month: 'short', year: 'numeric' }).format(date)}</span></div><div className="timeline-dot"><span /></div><div className="memory-entry"><div className="memory-page"><button className="timeline-content-button" onClick={() => onOpen(entry)}>{cover ? <div className="memory-cover" style={{ backgroundImage: `url(${cover.src})` }}><span>{entryPhotos.length} 张照片</span></div> : <div className="memory-cover memory-cover-empty"><ImageIcon size={22} /><span>还没有照片</span></div>}<div className="memory-page-copy"><div className="memory-entry-top"><div><span className="item-meta">{isMilestone ? <span className="timeline-kind">重要日子</span> : entry.location ?? '未记录地点'} <span>·</span> {isSystem ? '关系起点' : isMilestone && entry.repeatAnnual ? '每年重复' : '回忆'}</span><h3>{entry.title}</h3></div><RoleBadge role={entry.createdByRole} prefix="由 " /></div><p>{isMilestone ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{!isMilestone && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{isMilestone && entry.nextOccurrence && <div className="milestone-countdown"><CalendarDays size={14} />下一次 {formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</div>}</div></button></div><div className="entry-actions">{!readOnly && !isSystem && <button className="icon-button subtle" title="编辑" aria-label={`编辑${entry.title}`} onClick={() => onEdit(entry)} disabled={disabled}><Pencil size={15} /></button>}{!readOnly && !isSystem && <button className="icon-button subtle danger-icon" title="删除" aria-label={`删除${entry.title}`} onClick={() => onDelete(entry)} disabled={disabled}><Trash2 size={15} /></button>}<button className="icon-button subtle" title="查看详情" aria-label={`查看${entry.title}`} onClick={() => onOpen(entry)}><MoreHorizontal size={16} /></button></div></div></article>;
 }
 
-function PhotosView({ photos, uploads, timeline, readOnly, disabled, onUpload, onEdit, onDelete, onClearUpload, onRetry }: { photos: Photo[]; uploads: UploadItem[]; timeline: TimelineDisplayEntry[]; readOnly: boolean; disabled: boolean; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; onEdit: (photo: Photo) => void; onDelete: (photo: Photo) => void; onClearUpload: (id: string) => void; onRetry: (item: UploadItem) => void }) {
-  return <div className="view-stack"><ViewIntro eyebrow="THE LITTLE DETAILS" title="照片" description={`${photos.length} 张照片，把普通日子变成一整面墙。`} action={!readOnly && <label className="button button-dark"><Upload size={17} />选择照片<input className="visually-hidden" type="file" accept="image/*" multiple onChange={onUpload} disabled={disabled} /></label>} />{uploads.length > 0 && <UploadQueue uploads={uploads} onClear={onClearUpload} onRetry={onRetry} />}{photos.length > 0 ? <div className="photo-wall">{photos.map((photo, index) => <article className={`photo-tile tile-${index % 5}`} key={photo.id}><img src={photo.src} alt={photo.caption || '照片'} /><div className="photo-overlay"><span>{photo.caption}</span><div className="photo-actions"><small>{formatShortDate(photo.date)}</small>{!readOnly && <><button className="photo-action" title="编辑照片" aria-label={`编辑${photo.caption}`} onClick={() => onEdit(photo)} disabled={disabled}><Pencil size={13} /></button><button className="photo-action" title="删除照片" aria-label={`删除${photo.caption}`} onClick={() => onDelete(photo)} disabled={disabled}><Trash2 size={13} /></button></>}</div></div></article>)}</div> : <EmptyState text={readOnly ? '公开预览暂无照片。' : '还没有照片，选几张你们的日常吧。'} />}{photos.length > 0 && <p className="view-note"><Camera size={16} /> 支持手机相册和拍照上传，可以多选，单张图片小于 20MB。</p>}{timeline.length === 0 && <span className="visually-hidden">{timeline.length}</span>}</div>;
+function formatMonthLabel(month: string): string {
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long' }).format(new Date(`${month}-01T12:00:00`));
+}
+
+function formatPhotoDay(date: string): string {
+  return new Intl.DateTimeFormat('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(`${date}T12:00:00`));
+}
+
+function photoAspectRatio(photo: Photo): number {
+  if (!photo.width || !photo.height) return 1.25;
+  return Math.min(1.65, Math.max(.72, photo.width / photo.height));
+}
+
+function PhotosView({ photos, uploads, timeline, readOnly, disabled, onUpload, onOpen, onOpenTimeline, onClearUpload, onRetry, getAsset }: { photos: Photo[]; uploads: UploadItem[]; timeline: TimelineDisplayEntry[]; readOnly: boolean; disabled: boolean; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: (photo: Photo) => void; onOpenTimeline: (entryId: string) => void; onClearUpload: (id: string) => void; onRetry: (item: UploadItem) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
+  const groups = groupPhotosByDate(photos);
+  return <div className="view-stack">
+    <ViewIntro eyebrow="THE LITTLE DETAILS" title="照片" description={`${photos.length} 张照片，把普通日子串成一面墙。`} action={!readOnly && <label className="button button-dark"><Upload size={17} />选择照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={onUpload} disabled={disabled} /></label>} />
+    {groups.length > 0 ? <div className="photo-timeline" aria-label="照片时间线">{groups.map((month) => <section className="photo-month" key={month.month} aria-labelledby={`photo-month-${month.month}`}><div className="photo-month-heading"><span className="photo-month-knot" aria-hidden="true" /><h2 id={`photo-month-${month.month}`}>{formatMonthLabel(month.month)}</h2></div>{month.days.map((day) => <section className="photo-day" key={day.date} aria-labelledby={`photo-day-${day.date}`}><div className="photo-day-heading"><time id={`photo-day-${day.date}`} dateTime={day.date}>{formatPhotoDay(day.date)}</time><span>{day.photos.length} 张照片</span></div><div className="photo-rope-row">{day.photos.map((photo, index) => <PhotoCard key={photo.id} photo={photo} index={index} timeline={timeline} onOpen={onOpen} onOpenTimeline={onOpenTimeline} getAsset={getAsset} />)}</div></section>)}</section>)}</div> : <EmptyState text={readOnly ? '公开预览暂无照片。' : '还没有照片，选几张你们的日常吧。'} />}
+    {uploads.length > 0 && <UploadQueue uploads={uploads} onClear={onClearUpload} onRetry={onRetry} />}
+    {photos.length > 0 && <p className="view-note"><Camera size={16} /> 原图保留，照片墙按屏幕尺寸加载展示版。</p>}
+  </div>;
+}
+
+function PhotoCard({ photo, index, timeline, onOpen, onOpenTimeline, getAsset }: { photo: Photo; index: number; timeline: TimelineDisplayEntry[]; onOpen: (photo: Photo) => void; onOpenTimeline: (entryId: string) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
+  const [refreshedSrc, setRefreshedSrc] = useState<string>();
+  const [hasRetriedSource, setHasRetriedSource] = useState(false);
+  const linkedEntry = photo.timelineEntryId ? timeline.find((entry) => entry.id === photo.timelineEntryId) : undefined;
+  const displaySrc = refreshedSrc || photo.thumbnailSrc || photo.src;
+  const srcSet = refreshedSrc ? undefined : photo.thumbnailSrc && photo.src && photo.thumbnailSrc !== photo.src ? `${photo.thumbnailSrc} 720w, ${photo.src} 2048w` : undefined;
+
+  async function refreshExpiredSource() {
+    if (hasRetriedSource) return;
+    setHasRetriedSource(true);
+    const source = await getAsset(photo, 'thumbnail').catch(() => undefined);
+    if (source) setRefreshedSrc(source);
+  }
+
+  return <article className={`photo-hanging-card ${index % 2 === 0 ? 'hang-left' : 'hang-right'} ${photo.mediaKind === 'live' ? 'is-live' : ''}`} style={{ '--photo-ratio': photoAspectRatio(photo) } as CSSProperties}>
+    <span className="photo-clip" aria-hidden="true" />
+    <button className="photo-card-main" onClick={() => onOpen(photo)} aria-label={`查看${photo.caption || '照片'}`}>
+      <div className="photo-frame">{photo.previewAvailable === false ? <div className="photo-unavailable"><ImageIcon size={22} /><span>当前浏览器无法预览原格式</span></div> : <img src={displaySrc} srcSet={srcSet} sizes="(max-width: 700px) 82vw, 360px" alt={photo.caption || '照片'} loading="lazy" decoding="async" onError={() => void refreshExpiredSource()} />}{photo.mediaKind === 'live' && <span className="photo-live-badge"><Play size={11} fill="currentColor" />动态</span>}</div>
+      <div className="photo-card-copy"><div className="photo-card-title"><strong>{photo.caption || '未命名照片'}</strong><RoleBadge role={photo.createdByRole} prefix="由 " /></div><time dateTime={photo.date}>{formatShortDate(photo.date)}</time></div>
+    </button>
+    {linkedEntry && <button className="photo-memory-link" onClick={() => onOpenTimeline(linkedEntry.id)}><span>{linkedEntry.title}</span><ArrowUpRight size={13} /></button>}
+  </article>;
 }
 
 function UploadQueue({ uploads, onClear, onRetry }: { uploads: UploadItem[]; onClear: (id: string) => void; onRetry: (item: UploadItem) => void }) {
-  return <section className="upload-queue"><div className="section-heading compact-heading"><h3>上传队列</h3><span className="queue-count">{uploads.filter((item) => item.status === 'done').length}/{uploads.length}</span></div>{uploads.map((item) => <div className="upload-row" key={item.id}><div className="upload-row-copy"><strong>{item.name}</strong><span>{item.status === 'failed' ? item.error : item.status === 'done' ? '已完成' : item.status === 'preparing' ? '正在优化图片' : `正在保存 ${item.progress}%`}</span></div><div className={`upload-progress ${item.status === 'preparing' || item.status === 'uploading' ? 'is-active' : ''}`}><span style={{ width: `${item.progress}%` }} /></div>{item.status === 'failed' ? <button className="text-button" onClick={() => onRetry(item)}>重试</button> : <button className="icon-button small" title="移除上传记录" aria-label="移除上传记录" onClick={() => onClear(item.id)}><X size={14} /></button>}</div>)}</section>;
+  return <section className="upload-queue"><div className="section-heading compact-heading"><h3>上传队列</h3><span className="queue-count">{uploads.filter((item) => item.status === 'done').length}/{uploads.length}</span></div>{uploads.map((item) => <div className="upload-row" key={item.id}><div className="upload-row-copy"><strong>{item.name}</strong><span>{item.status === 'failed' ? item.error : item.stage}</span></div><div className={`upload-progress ${item.status === 'preparing' || item.status === 'uploading' ? 'is-active' : ''}`}><span className={item.status === 'done' ? 'is-complete' : ''} /></div>{item.status === 'failed' && item.retryable !== false ? <button className="text-button" onClick={() => onRetry(item)}>重试</button> : <button className="icon-button small" title="移除上传记录" aria-label="移除上传记录" onClick={() => onClear(item.id)}><X size={14} /></button>}</div>)}</section>;
+}
+
+function PhotoDetailSheet({ photo, timeline, readOnly, disabled, onClose, onEdit, onDelete, onOpenTimeline, getAsset }: { photo: Photo; timeline: TimelineDisplayEntry[]; readOnly: boolean; disabled: boolean; onClose: () => void; onEdit: () => void; onDelete: () => void; onOpenTimeline: (entryId: string) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
+  const [motionSrc, setMotionSrc] = useState(photo.motionSrc);
+  const [assetError, setAssetError] = useState('');
+  const linkedEntry = photo.timelineEntryId ? timeline.find((entry) => entry.id === photo.timelineEntryId) : undefined;
+
+  useEffect(() => {
+    if (photo.mediaKind !== 'live' || motionSrc) return;
+    let cancelled = false;
+    getAsset(photo, 'motion').then((source) => {
+      if (!cancelled) setMotionSrc(source);
+    }).catch(() => {
+      if (!cancelled) setAssetError('动态片段暂时无法读取。');
+    });
+    return () => { cancelled = true; };
+  }, [getAsset, motionSrc, photo]);
+
+  async function openOriginal() {
+    try {
+      const source = photo.originalSrc ?? await getAsset(photo, 'original');
+      if (!source) throw new Error('原图暂时无法读取。');
+      const link = document.createElement('a');
+      link.href = source;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.download = photo.caption || photo.id;
+      link.click();
+    } catch (error) {
+      setAssetError(error instanceof Error ? error.message : '原图暂时无法读取。');
+    }
+  }
+
+  return <Sheet title={photo.caption || '照片详情'} eyebrow={photo.mediaKind === 'live' ? 'LIVE PHOTO' : 'PHOTO'} onClose={onClose}><div className="photo-detail-hero">{photo.previewAvailable === false ? <div className="photo-unavailable"><ImageIcon size={26} /><span>当前浏览器无法预览原格式，可直接打开原图</span></div> : <img src={photo.src} alt={photo.caption || '照片'} />}{photo.mediaKind === 'live' && motionSrc && <video src={motionSrc} poster={photo.previewAvailable === false ? undefined : photo.src} controls playsInline preload="metadata" />}</div><div className="detail-meta"><RoleBadge role={photo.createdByRole} prefix="由 " /><span><Camera size={13} />{formatDate(photo.date, { year: 'numeric', month: 'long', day: 'numeric' })}</span>{photo.originalBytes && <span>· {Math.round(photo.originalBytes / 1024 / 1024 * 10) / 10}MB 原图</span>}</div>{linkedEntry && <button className="photo-detail-memory" onClick={() => onOpenTimeline(linkedEntry.id)}><Film size={16} /><span>关联回忆：{linkedEntry.title}</span><ArrowUpRight size={15} /></button>}{assetError && <p className="form-error">{assetError}</p>}<div className="form-actions">{!readOnly && !disabled && <><button className="button button-outline" onClick={onEdit}><Pencil size={16} />编辑</button><button className="button button-danger" onClick={onDelete}><Trash2 size={16} />删除</button></>}<button className="button button-dark" onClick={() => void openOriginal()}><Download size={16} />打开原图</button></div></Sheet>;
 }
 
 function PlansView({ plans, readOnly, disabled, onAdd, onEdit, onDelete, onToggle, onWriteMemory }: { plans: PlanItem[]; readOnly: boolean; disabled: boolean; onAdd: () => void; onEdit: (plan: PlanItem) => void; onDelete: (plan: PlanItem) => void; onToggle: (plan: PlanItem) => void; onWriteMemory: (plan: PlanItem) => void }) {
@@ -561,20 +726,20 @@ function PlansView({ plans, readOnly, disabled, onAdd, onEdit, onDelete, onToggl
 
 function PlanRow({ plan, large = false, disabled = false, onToggle, onEdit, onDelete, onWriteMemory }: { plan: PlanItem; large?: boolean; disabled?: boolean; onToggle: (plan: PlanItem) => void; onEdit?: (plan: PlanItem) => void; onDelete?: (plan: PlanItem) => void; onWriteMemory?: (plan: PlanItem) => void }) {
   const done = plan.status === '已完成';
-  return <div className={`task-row ${large ? 'large' : ''} ${done ? 'done' : ''}`}><button className="check-button" title={done ? '标记为未完成' : '标记为完成'} aria-label={done ? '标记为未完成' : '标记为完成'} onClick={() => onToggle(plan)} disabled={disabled}>{done ? <Check size={14} /> : <Circle size={16} />}</button><div className="task-content"><strong>{plan.title}</strong><span>{plan.type} <span>·</span> {plan.assignee}{plan.dueDate && <> <span>·</span> {formatShortDate(plan.dueDate)}</>}</span></div><span className={`priority priority-${plan.priority}`} />{large && <div className="row-actions">{done && onWriteMemory && <button className="text-button small-text" onClick={() => onWriteMemory(plan)} disabled={disabled}>写成回忆</button>}{onEdit && <button className="icon-button small" title="编辑计划" aria-label={`编辑${plan.title}`} onClick={() => onEdit(plan)} disabled={disabled}><Pencil size={14} /></button>}{onDelete && <button className="icon-button small danger-icon" title="删除计划" aria-label={`删除${plan.title}`} onClick={() => onDelete(plan)} disabled={disabled}><Trash2 size={14} /></button>}</div>}</div>;
+  return <div className={`task-row ${large ? 'large' : ''} ${done ? 'done' : ''}`}><button className="check-button" title={done ? '标记为未完成' : '标记为完成'} aria-label={done ? '标记为未完成' : '标记为完成'} onClick={() => onToggle(plan)} disabled={disabled}>{done ? <Check size={14} /> : <Circle size={16} />}</button><div className="task-content"><strong>{plan.title}</strong><span>{plan.type} <span>·</span> 负责人 {getRoleLabel(plan.assignee)}{plan.dueDate && <> <span>·</span> {formatShortDate(plan.dueDate)}</>}</span></div><RoleBadge role={plan.createdByRole} prefix="由 " /><span className={`priority priority-${plan.priority}`} />{large && <div className="row-actions">{done && onWriteMemory && <button className="text-button small-text" onClick={() => onWriteMemory(plan)} disabled={disabled}>写成回忆</button>}{onEdit && <button className="icon-button small" title="编辑计划" aria-label={`编辑${plan.title}`} onClick={() => onEdit(plan)} disabled={disabled}><Pencil size={14} /></button>}{onDelete && <button className="icon-button small danger-icon" title="删除计划" aria-label={`删除${plan.title}`} onClick={() => onDelete(plan)} disabled={disabled}><Trash2 size={14} /></button>}</div>}</div>;
 }
 
-function SettingsView({ data, publicDemo, remoteMode, readOnly, onReset, onEditStart, onLock }: { data: SpaceData; publicDemo: boolean; remoteMode: boolean; readOnly: boolean; onReset: () => void; onEditStart: () => void; onLock: () => void }) {
+function SettingsView({ data, activeRole, publicDemo, remoteMode, readOnly, onReset, onEditStart, onRoleChange, onLock }: { data: SpaceData; activeRole: ActiveRole; publicDemo: boolean; remoteMode: boolean; readOnly: boolean; onReset: () => void; onEditStart: () => void; onRoleChange: (role: ActiveRole) => void; onLock: () => void }) {
   const accessLabel = readOnly ? '公开预览' : publicDemo ? '公开演示' : remoteMode ? '私密共享' : '本地演示';
   const accessDescription = readOnly ? '当前为空数据只读公开预览。私密修改请打开 ?space=private。' : publicDemo ? '当前为空间公开演示模式，请不要上传真实隐私照片。' : remoteMode ? '当前使用 Supabase Auth 和私有 Storage，两台设备会共享同一份内容。' : '当前内容保存在这个浏览器中，数据不会自动同步到其他设备。';
   const dangerEyebrow = readOnly ? 'PUBLIC PREVIEW' : remoteMode ? 'PRIVATE SHARED SPACE' : 'LOCAL SPACE';
-  return <div className="view-stack"><ViewIntro eyebrow="SPACE SETTINGS" title="设置" description="这里管理你们的空间偏好。重要日期会按设定时区计算。" /><section className="settings-list"><div className="settings-item"><div className="settings-icon"><Heart size={18} /></div><div><strong>空间名称</strong><span>{data.spaceName} · 两个人共同编辑</span></div><ChevronRight size={18} className="muted-icon" /></div><button className="settings-item settings-item-button" onClick={onEditStart} disabled={readOnly}><div className="settings-icon"><CalendarDays size={18} /></div><div><strong>恋爱开始日</strong><span>{data.relationshipStart ? `${formatDate(data.relationshipStart, { year: 'numeric', month: 'long', day: 'numeric' })} · ${data.timezone}` : '尚未设置，设置后会开始显示恋爱时长'}</span></div><span className="settings-badge">{readOnly ? '只读' : '编辑'}</span></button><div className="settings-item"><div className="settings-icon"><LockKeyhole size={18} /></div><div><strong>访问安全</strong><span>{accessDescription}</span></div><span className="settings-badge">{accessLabel}</span></div></section>{!readOnly ? <section className="settings-danger"><div><span className="eyebrow">{dangerEyebrow}</span><h3>清空空间</h3><p>清空后不会恢复任何示例数据。</p></div><div className="settings-actions"><button className="button button-danger" onClick={onReset}><Trash2 size={16} />清空内容</button><button className="button button-outline" onClick={onLock}><LockKeyhole size={16} />锁定空间</button></div></section> : <section className="settings-danger settings-readonly-note"><span className="eyebrow">PUBLIC PREVIEW</span><h3>这是只读入口</h3><p>真实内容和照片请只放在带有 ?space=private 查询参数的私密入口。</p></section>}</div>;
+  return <div className="view-stack"><ViewIntro eyebrow="SPACE SETTINGS" title="设置" description="这里管理你们的空间偏好。重要日期会按设定时区计算。" /><section className="settings-list"><div className="settings-item"><div className="settings-icon"><Heart size={18} /></div><div><strong>空间名称</strong><span>{data.spaceName} · 两个人共同编辑</span></div><ChevronRight size={18} className="muted-icon" /></div><div className="settings-item settings-role-item"><div className="settings-icon"><Heart size={18} /></div><div><strong>当前身份</strong><span>新建回忆、照片和计划会默认标记为 {getRoleLabel(activeRole)}。</span><RolePicker value={activeRole} onChange={(role) => { if (role === 'l' || role === 'w') onRoleChange(role); }} label="当前身份" includeBoth={false} /></div></div><button className="settings-item settings-item-button" onClick={onEditStart} disabled={readOnly}><div className="settings-icon"><CalendarDays size={18} /></div><div><strong>恋爱开始日</strong><span>{data.relationshipStart ? `${formatDate(data.relationshipStart, { year: 'numeric', month: 'long', day: 'numeric' })} · ${data.timezone}` : '尚未设置，设置后会开始显示恋爱时长'}</span></div><span className="settings-badge">{readOnly ? '只读' : '编辑'}</span></button><div className="settings-item"><div className="settings-icon"><LockKeyhole size={18} /></div><div><strong>访问安全</strong><span>{accessDescription}</span></div><span className="settings-badge">{accessLabel}</span></div><a className="settings-item settings-item-button" href="/assets/ATTRIBUTIONS.md" target="_blank" rel="noreferrer"><div className="settings-icon"><Sparkles size={18} /></div><div><strong>视觉素材致谢</strong><span>查看本地贴纸与实拍材质的作者、来源和许可证。</span></div><ChevronRight size={18} className="muted-icon" /></a></section>{!readOnly ? <section className="settings-danger"><div><span className="eyebrow">{dangerEyebrow}</span><h3>清空空间</h3><p>清空后不会恢复任何示例数据。</p></div><div className="settings-actions"><button className="button button-danger" onClick={onReset}><Trash2 size={16} />清空内容</button><button className="button button-outline" onClick={onLock}><LockKeyhole size={16} />锁定空间</button></div></section> : <section className="settings-danger settings-readonly-note"><span className="eyebrow">PUBLIC PREVIEW</span><h3>这是只读入口</h3><p>真实内容和照片请只放在带有 ?space=private 查询参数的私密入口。</p></section>}</div>;
 }
 
 function TimelineDetailSheet({ entry, photos, readOnly, disabled, onClose, onEdit, onDelete }: { entry: TimelineDisplayEntry; photos: Photo[]; readOnly: boolean; disabled: boolean; onClose: () => void; onEdit: () => void; onDelete: () => void }) {
   const entryPhotos = photos.filter((photo) => photo.timelineEntryId === entry.id);
   const isSystem = entry.type === 'milestone' && Boolean(entry.systemRole);
-  return <Sheet title={entry.type === 'milestone' ? '重要日子' : '回忆详情'} eyebrow={entry.type === 'milestone' ? 'MILESTONE' : 'MEMORY'} onClose={onClose}><div className="detail-meta"><span>{formatTimelineDate(entry, entry.date)}</span>{entry.location && <><span>·</span><span><MapPin size={13} />{entry.location}</span></>}</div><h2 className="detail-title">{entry.title}</h2><p className="detail-body">{entry.type === 'milestone' ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{entry.type === 'milestone' && entry.nextOccurrence && <div className="detail-highlight"><CalendarDays size={17} /><div><strong>{entry.repeatAnnual ? '下一次纪念日' : '日期倒计时'}</strong><span>{formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</span></div></div>}{entry.type === 'memory' && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{entryPhotos.length > 0 && <div className="detail-photo-grid">{entryPhotos.map((photo) => <img key={photo.id} src={photo.src} alt={photo.caption} />)}</div>}<div className="form-actions">{!readOnly && !disabled && !isSystem && <button className="button button-outline" onClick={onEdit}><Pencil size={16} />编辑</button>}{!readOnly && !disabled && !isSystem && <button className="button button-danger" onClick={onDelete}><Trash2 size={16} />删除</button>}{(readOnly || disabled || isSystem) && <span className="view-note">{isSystem ? '恋爱开始日由空间设置管理' : readOnly ? '公开预览为只读' : '共享空间正在加载'}</span>}</div></Sheet>;
+  return <Sheet title={entry.type === 'milestone' ? '重要日子' : '回忆详情'} eyebrow={entry.type === 'milestone' ? 'MILESTONE' : 'MEMORY'} onClose={onClose}><div className="detail-meta"><RoleBadge role={entry.createdByRole} prefix="由 " /><span>{formatTimelineDate(entry, entry.date)}</span>{entry.location && <><span>·</span><span><MapPin size={13} />{entry.location}</span></>}</div><h2 className="detail-title">{entry.title}</h2><p className="detail-body">{entry.type === 'milestone' ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{entry.type === 'milestone' && entry.nextOccurrence && <div className="detail-highlight"><CalendarDays size={17} /><div><strong>{entry.repeatAnnual ? '下一次纪念日' : '日期倒计时'}</strong><span>{formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</span></div></div>}{entry.type === 'memory' && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{entryPhotos.length > 0 && <div className="detail-photo-grid">{entryPhotos.map((photo) => <img key={photo.id} src={photo.src} alt={photo.caption} />)}</div>}<div className="form-actions">{!readOnly && !disabled && !isSystem && <button className="button button-outline" onClick={onEdit}><Pencil size={16} />编辑</button>}{!readOnly && !disabled && !isSystem && <button className="button button-danger" onClick={onDelete}><Trash2 size={16} />删除</button>}{(readOnly || disabled || isSystem) && <span className="view-note">{isSystem ? '恋爱开始日由空间设置管理' : readOnly ? '公开预览为只读' : '共享空间正在加载'}</span>}</div></Sheet>;
 }
 
 function RelationshipSettingsForm({ relationshipStart, onClose, onSubmit }: { relationshipStart: string | null; onClose: () => void; onSubmit: (relationshipStart: string | null) => void }) {
@@ -586,37 +751,40 @@ function RelationshipSettingsForm({ relationshipStart, onClose, onSubmit }: { re
   return <Sheet title="设置恋爱开始日" eyebrow="RELATIONSHIP START" onClose={onClose}><form className="modal-form" onSubmit={submit}><p className="form-description">这一天会成为你们时间线的起点，也会用于计算首页的恋爱时长。</p><label>开始日期<input name="relationship-start" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><FormActions onClose={onClose} submitLabel="保存开始日" /></form></Sheet>;
 }
 
-function MemoryForm({ entry, draft, onClose, onSubmit }: { entry?: MemoryEntry; draft?: MemoryEntry; onClose: () => void; onSubmit: (memory: MemoryEntry) => void }) {
+function MemoryForm({ entry, draft, activeRole, onClose, onSubmit }: { entry?: MemoryEntry; draft?: MemoryEntry; activeRole: ActiveRole; onClose: () => void; onSubmit: (memory: MemoryEntry, attachments?: File[]) => void }) {
   const initial = entry ?? draft;
   const [title, setTitle] = useState(initial?.title ?? '');
   const [date, setDate] = useState(initial?.date ?? todayString());
   const [location, setLocation] = useState(initial?.location ?? '');
   const [body, setBody] = useState(initial?.body ?? '');
   const [tags, setTags] = useState(initial?.tags.join(', ') ?? '');
+  const [createdByRole, setCreatedByRole] = useState<SpaceRole>(initial?.createdByRole ?? activeRole);
+  const [attachments, setAttachments] = useState<File[]>([]);
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!title.trim() || !date || !body.trim()) return;
-    onSubmit({ id: entry?.id ?? newId('memory'), type: 'memory', title: title.trim(), date, location: location.trim(), body: body.trim(), tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), createdAt: entry?.createdAt ?? new Date().toISOString(), version: entry?.version, updatedAt: entry?.updatedAt });
+    onSubmit({ id: entry?.id ?? newId('memory'), type: 'memory', title: title.trim(), date, location: location.trim(), body: body.trim(), tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), createdByRole, createdAt: entry?.createdAt ?? new Date().toISOString(), version: entry?.version, updatedAt: entry?.updatedAt }, attachments);
   }
-  return <Sheet title={entry ? '编辑回忆' : '记录一条回忆'} eyebrow={entry ? 'EDIT MEMORY' : 'NEW MEMORY'} onClose={onClose}><form className="modal-form" onSubmit={submit}><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：第一次一起看海" required /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>地点<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="可以留空" /></label></div><label>写下这一刻<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="发生了什么？你记得什么？" rows={5} required /></label><label>标签<span className="label-hint">用逗号分开</span><input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="旅行, 晴天" /></label><FormActions onClose={onClose} submitLabel="保存回忆" /></form></Sheet>;
+  return <Sheet title={entry ? '编辑回忆' : '记录一条回忆'} eyebrow={entry ? 'EDIT MEMORY' : 'NEW MEMORY'} onClose={onClose}><form className="modal-form" onSubmit={submit}><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：第一次一起看海" required /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>地点<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="可以留空" /></label></div><label>写下这一刻<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="发生了什么？你记得什么？" rows={5} required /></label><label>标签<span className="label-hint">用逗号分开</span><input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="旅行, 晴天" /></label><RolePicker value={createdByRole} onChange={setCreatedByRole} label="谁添加了这段回忆" includeUnknown={Boolean(entry)} />{!entry && <div className="memory-attachments"><span className="label-hint">附带照片 <span>可选，保存回忆后会自动关联</span></span><label className="button button-outline memory-attachment-picker"><Upload size={16} />选择照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={(event) => setAttachments(Array.from(event.target.files ?? []))} /></label>{attachments.length > 0 && <p className="form-description">已选择 {attachments.length} 个文件：{attachments.map((file) => file.name).join('、')}</p>}</div>}<FormActions onClose={onClose} submitLabel="保存回忆" /></form></Sheet>;
 }
 
-function MilestoneForm({ entry, onClose, onSubmit }: { entry?: MilestoneEntry; onClose: () => void; onSubmit: (milestone: MilestoneEntry) => void }) {
+function MilestoneForm({ entry, activeRole, onClose, onSubmit }: { entry?: MilestoneEntry; activeRole: ActiveRole; onClose: () => void; onSubmit: (milestone: MilestoneEntry) => void }) {
   const [title, setTitle] = useState(entry?.title ?? '');
   const [date, setDate] = useState(entry?.date ?? '');
   const [repeatAnnual, setRepeatAnnual] = useState(entry?.repeatAnnual ?? true);
   const [time, setTime] = useState(entry?.time ?? '');
   const [location, setLocation] = useState(entry?.location ?? '');
   const [note, setNote] = useState(entry?.note ?? '');
+  const [createdByRole, setCreatedByRole] = useState<SpaceRole>(entry?.createdByRole ?? activeRole);
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!title.trim() || !date) return;
-    onSubmit({ id: entry?.id ?? newId('milestone'), type: 'milestone', title: title.trim(), date, kind: repeatAnnual ? 'anniversary' : 'one-off', repeatAnnual, time: time || undefined, location: location.trim() || undefined, note: note.trim() || undefined, systemRole: entry?.systemRole, createdAt: entry?.createdAt ?? new Date().toISOString(), version: entry?.version, updatedAt: entry?.updatedAt });
+    onSubmit({ id: entry?.id ?? newId('milestone'), type: 'milestone', title: title.trim(), date, kind: repeatAnnual ? 'anniversary' : 'one-off', repeatAnnual, time: time || undefined, location: location.trim() || undefined, note: note.trim() || undefined, systemRole: entry?.systemRole, createdByRole, createdAt: entry?.createdAt ?? new Date().toISOString(), version: entry?.version, updatedAt: entry?.updatedAt });
   }
-  return <Sheet title={entry ? '编辑重要日子' : '添加重要日子'} eyebrow={entry ? 'EDIT MILESTONE' : 'NEW MILESTONE'} onClose={onClose}><form className="modal-form" onSubmit={submit}><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：第一次见面的日子" required /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>时间<span className="label-hint">可选</span><input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></label></div><div className="segmented-control"><button type="button" className={repeatAnnual ? 'selected' : ''} onClick={() => setRepeatAnnual(true)}>每年重复</button><button type="button" className={!repeatAnnual ? 'selected' : ''} onClick={() => setRepeatAnnual(false)}>一次性</button></div><label>地点<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="例如：赤柱" /></label><label>说明<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="想为这一天留下什么？" rows={4} /></label><FormActions onClose={onClose} submitLabel="保存日期" /></form></Sheet>;
+  return <Sheet title={entry ? '编辑重要日子' : '添加重要日子'} eyebrow={entry ? 'EDIT MILESTONE' : 'NEW MILESTONE'} onClose={onClose}><form className="modal-form" onSubmit={submit}><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：第一次见面的日子" required /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>时间<span className="label-hint">可选</span><input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></label></div><div className="segmented-control"><button type="button" className={repeatAnnual ? 'selected' : ''} onClick={() => setRepeatAnnual(true)}>每年重复</button><button type="button" className={!repeatAnnual ? 'selected' : ''} onClick={() => setRepeatAnnual(false)}>一次性</button></div><label>地点<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="例如：赤柱" /></label><label>说明<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="想为这一天留下什么？" rows={4} /></label><RolePicker value={createdByRole} onChange={setCreatedByRole} label="谁添加了这个日子" includeUnknown={Boolean(entry)} /><FormActions onClose={onClose} submitLabel="保存日期" /></form></Sheet>;
 }
 
-function PlanForm({ plan, onClose, onSubmit }: { plan?: PlanItem; onClose: () => void; onSubmit: (plan: PlanItem) => void }) {
+function PlanForm({ plan, activeRole, onClose, onSubmit }: { plan?: PlanItem; activeRole: ActiveRole; onClose: () => void; onSubmit: (plan: PlanItem) => void }) {
   const [title, setTitle] = useState(plan?.title ?? '');
   const [type, setType] = useState<PlanType>(plan?.type ?? '生活');
   const [status, setStatus] = useState<PlanStatus>(plan?.status ?? '想法');
@@ -625,24 +793,26 @@ function PlanForm({ plan, onClose, onSubmit }: { plan?: PlanItem; onClose: () =>
   const [link, setLink] = useState(plan?.link ?? '');
   const [note, setNote] = useState(plan?.note ?? '');
   const [priority, setPriority] = useState<PlanItem['priority']>(plan?.priority ?? 'medium');
-  const [assignee, setAssignee] = useState<PlanItem['assignee']>(plan?.assignee ?? '一起');
+  const [assignee, setAssignee] = useState<PlanItem['assignee']>(plan?.assignee ?? 'both');
+  const [createdByRole, setCreatedByRole] = useState<SpaceRole>(plan?.createdByRole ?? activeRole);
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!title.trim()) return;
-    onSubmit({ id: plan?.id ?? newId('plan'), title: title.trim(), type, status, dueDate: dueDate || undefined, location: location.trim() || undefined, link: link.trim() || undefined, note: note.trim() || undefined, priority, assignee, completedAt: plan?.completedAt, version: plan?.version, updatedAt: plan?.updatedAt });
+    onSubmit({ id: plan?.id ?? newId('plan'), title: title.trim(), type, status, dueDate: dueDate || undefined, location: location.trim() || undefined, link: link.trim() || undefined, note: note.trim() || undefined, priority, assignee, createdByRole, completedAt: plan?.completedAt, version: plan?.version, updatedAt: plan?.updatedAt });
   }
-  return <Sheet title={plan ? '编辑计划' : '添加计划'} eyebrow={plan ? 'EDIT PLAN' : 'NEW PLAN'} onClose={onClose}><form className="modal-form" onSubmit={submit}><label>计划内容<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：找一个周末去看日落" required /></label><div className="form-grid"><label>类型<select value={type} onChange={(event) => setType(event.target.value as PlanType)}><option>地点</option><option>餐厅</option><option>电影</option><option>礼物</option><option>生活</option><option>纪念日</option><option>其他</option></select></label><label>状态<select value={status} onChange={(event) => setStatus(event.target.value as PlanStatus)}><option>想法</option><option>计划中</option><option>已完成</option><option>搁置</option></select></label></div><div className="form-grid"><label>日期<span className="label-hint">可选</span><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label><label>负责人<select value={assignee} onChange={(event) => setAssignee(event.target.value as PlanItem['assignee'])}><option>一起</option><option>我</option><option>你</option></select></label></div><label>地点<span className="label-hint">可选</span><input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="例如：长洲岛" /></label><label>链接<span className="label-hint">可选</span><div className="input-with-icon"><Link2 size={16} /><input value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://..." /></div></label><label>备注<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="为什么想一起做？" rows={4} /></label><div className="form-grid"><label>优先级<select value={priority} onChange={(event) => setPriority(event.target.value as PlanItem['priority'])}><option value="low">不着急</option><option value="medium">普通</option><option value="high">重要</option></select></label><div /></div><FormActions onClose={onClose} submitLabel="保存计划" /></form></Sheet>;
+  return <Sheet title={plan ? '编辑计划' : '添加计划'} eyebrow={plan ? 'EDIT PLAN' : 'NEW PLAN'} onClose={onClose}><form className="modal-form" onSubmit={submit}><label>计划内容<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：找一个周末去看日落" required /></label><div className="form-grid"><label>类型<select value={type} onChange={(event) => setType(event.target.value as PlanType)}><option>地点</option><option>餐厅</option><option>电影</option><option>礼物</option><option>生活</option><option>纪念日</option><option>其他</option></select></label><label>状态<select value={status} onChange={(event) => setStatus(event.target.value as PlanStatus)}><option>想法</option><option>计划中</option><option>已完成</option><option>搁置</option></select></label></div><div className="form-grid"><label>日期<span className="label-hint">可选</span><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label><RolePicker value={assignee} onChange={(role) => { if (role !== 'unknown') setAssignee(role); }} label="负责人" /></div><RolePicker value={createdByRole} onChange={setCreatedByRole} label="谁创建了这个计划" includeUnknown={Boolean(plan)} /><label>地点<span className="label-hint">可选</span><input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="例如：长洲岛" /></label><label>链接<span className="label-hint">可选</span><div className="input-with-icon"><Link2 size={16} /><input value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://..." /></div></label><label>备注<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="为什么想一起做？" rows={4} /></label><div className="form-grid"><label>优先级<select value={priority} onChange={(event) => setPriority(event.target.value as PlanItem['priority'])}><option value="low">不着急</option><option value="medium">普通</option><option value="high">重要</option></select></label><div /></div><FormActions onClose={onClose} submitLabel="保存计划" /></form></Sheet>;
 }
 
 function PhotoForm({ photo, timeline, onClose, onSubmit }: { photo: Photo; timeline: TimelineDisplayEntry[]; onClose: () => void; onSubmit: (photo: Photo) => void }) {
   const [caption, setCaption] = useState(photo.caption);
   const [date, setDate] = useState(photo.date);
   const [timelineEntryId, setTimelineEntryId] = useState(photo.timelineEntryId ?? '');
+  const [createdByRole, setCreatedByRole] = useState<SpaceRole>(photo.createdByRole ?? 'unknown');
   function submit(event: FormEvent) {
     event.preventDefault();
-    onSubmit({ ...photo, caption: caption.trim() || '未命名照片', date, timelineEntryId: timelineEntryId || undefined });
+    onSubmit({ ...photo, caption: caption.trim() || '未命名照片', date, timelineEntryId: timelineEntryId || undefined, createdByRole });
   }
-  return <Sheet title="编辑照片" eyebrow="EDIT PHOTO" onClose={onClose}><div className="photo-edit-preview"><img src={photo.src} alt={photo.caption} /></div><form className="modal-form" onSubmit={submit}><label>说明<input value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="这张照片记得什么？" /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>关联时间线<select value={timelineEntryId} onChange={(event) => setTimelineEntryId(event.target.value)}><option value="">独立照片</option>{timeline.filter((entry) => entry.type === 'memory' || entry.type === 'milestone').map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select></label></div><FormActions onClose={onClose} submitLabel="保存照片" /></form></Sheet>;
+  return <Sheet title="编辑照片" eyebrow="EDIT PHOTO" onClose={onClose}><div className="photo-edit-preview"><img src={photo.src} alt={photo.caption} /></div><form className="modal-form" onSubmit={submit}><label>说明<input value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="这张照片记得什么？" /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>关联时间线<select value={timelineEntryId} onChange={(event) => setTimelineEntryId(event.target.value)}><option value="">独立照片</option>{timeline.filter((entry) => entry.type === 'memory' || entry.type === 'milestone').map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select></label></div><RolePicker value={createdByRole} onChange={setCreatedByRole} label="谁添加了这张照片" includeUnknown /><FormActions onClose={onClose} submitLabel="保存照片" /></form></Sheet>;
 }
 
 function Sheet({ title, eyebrow, children, onClose }: { title: string; eyebrow: string; children: ReactNode; onClose: () => void }) {

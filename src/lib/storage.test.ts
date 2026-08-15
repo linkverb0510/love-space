@@ -17,7 +17,7 @@ describe('empty local space storage', () => {
     vi.stubGlobal('window', { localStorage: createLocalStorage() });
 
     expect(resetSpaceData()).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       spaceName: 'our little space',
       relationshipStart: null,
       timezone: 'Asia/Hong_Kong',
@@ -70,5 +70,34 @@ describe('empty local space storage', () => {
       photos: [{ id: 'photo-1', version: 1 }],
       plans: [{ id: 'plan-1', version: 1 }]
     });
+  });
+
+  it('normalizes legacy role values and preserves unknown authors', () => {
+    const localStorage = createLocalStorage();
+    localStorage.setItem('love-space-data-v3', JSON.stringify({
+      spaceName: 'our little space',
+      relationshipStart: null,
+      timezone: 'Asia/Hong_Kong',
+      timeline: [{ id: 'memory-1', type: 'memory', title: '回忆', date: '2026-08-03', body: '内容', tags: [] }],
+      photos: [{ id: 'photo-1', src: '', caption: '照片', date: '2026-08-03' }],
+      plans: [{ id: 'plan-1', title: '计划', type: '生活', status: '计划中', priority: 'medium', assignee: '我' }]
+    }));
+    vi.stubGlobal('window', { localStorage });
+
+    expect(loadSpaceData()).toMatchObject({
+      timeline: [{ id: 'memory-1', createdByRole: 'unknown' }],
+      photos: [{ id: 'photo-1', createdByRole: 'unknown' }],
+      plans: [{ id: 'plan-1', assignee: 'l', createdByRole: 'unknown' }]
+    });
+  });
+
+  it('keeps malformed metadata recoverable instead of overwriting it', () => {
+    const localStorage = createLocalStorage();
+    localStorage.setItem('love-space-data-v3', '{broken-json');
+    vi.stubGlobal('window', { localStorage });
+
+    expect(loadSpaceData()).toMatchObject({ photos: [], timeline: [], plans: [] });
+    expect(localStorage.getItem('love-space-data-v3')).toBe('{broken-json');
+    expect(localStorage.getItem('love-space-data-v3-recovery')).toBe('{broken-json');
   });
 });

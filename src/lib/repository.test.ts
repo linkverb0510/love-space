@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConflictError } from './errors';
-import { buildPhotoStoragePath, SupabaseSpaceRepository, toPhotoMetadata } from './repository';
+import { buildPhotoAssetStoragePath, buildPhotoStoragePath, SupabaseSpaceRepository, toPhotoMetadata } from './repository';
 
 function config() {
   return {
@@ -63,6 +63,12 @@ describe('repository photo helpers', () => {
     expect(buildPhotoStoragePath('demo-space', 'photo-1')).toBe('demo-space/photo-1.webp');
   });
 
+  it('uses stable variant paths while preserving the original extension', () => {
+    expect(buildPhotoAssetStoragePath('demo-space', 'photo-1', 'thumbnail', 'webp')).toBe('demo-space/photo-1-thumb.webp');
+    expect(buildPhotoAssetStoragePath('demo-space', 'photo-1', 'original', 'HEIC')).toBe('demo-space/photo-1-original.heic');
+    expect(buildPhotoAssetStoragePath('demo-space', 'photo-1', 'motion', 'MOV')).toBe('demo-space/photo-1-motion.mov');
+  });
+
   it('passes photo metadata without a local object URL', () => {
     expect(toPhotoMetadata({
       id: 'photo-1',
@@ -70,12 +76,14 @@ describe('repository photo helpers', () => {
       caption: '一张照片',
       date: '2026-08-02',
       timelineEntryId: 'memory-1',
+      createdByRole: 'w',
       assetKey: 'photo-1'
     })).toEqual({
       id: 'photo-1',
       caption: '一张照片',
       date: '2026-08-02',
-      timelineEntryId: 'memory-1'
+      timelineEntryId: 'memory-1',
+      createdByRole: 'w'
     });
   });
 });

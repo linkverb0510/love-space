@@ -1,5 +1,8 @@
 export type ViewKey = 'home' | 'timeline' | 'photos' | 'plans' | 'settings';
 
+export type SpaceRole = 'l' | 'w' | 'both' | 'unknown';
+export type AssignedRole = Exclude<SpaceRole, 'unknown'>;
+
 export type TimelineEntryType = 'memory' | 'milestone';
 export type MilestoneKind = 'anniversary' | 'one-off';
 
@@ -11,6 +14,7 @@ type TimelineBase = {
   createdAt?: string;
   version?: number;
   updatedAt?: string;
+  createdByRole?: SpaceRole;
 };
 
 export type MemoryEntry = TimelineBase & {
@@ -35,14 +39,35 @@ export type TimelineDisplayEntry = TimelineEntry & {
   countdownDays?: number;
 };
 
+export type PhotoMediaKind = 'image' | 'live';
+export type PhotoAssetVariant = 'thumbnail' | 'display' | 'original' | 'motion';
+
 export type Photo = {
   id: string;
   src: string;
   caption: string;
   date: string;
+  createdAt?: string;
   timelineEntryId?: string;
+  createdByRole?: SpaceRole;
+  mediaKind?: PhotoMediaKind;
+  previewAvailable?: boolean;
+  width?: number;
+  height?: number;
+  originalMime?: string;
+  motionMime?: string;
+  originalBytes?: number;
   storagePath?: string;
+  thumbnailStoragePath?: string;
+  originalStoragePath?: string;
+  motionStoragePath?: string;
   assetKey?: string;
+  thumbnailAssetKey?: string;
+  originalAssetKey?: string;
+  motionAssetKey?: string;
+  thumbnailSrc?: string;
+  originalSrc?: string;
+  motionSrc?: string;
   version?: number;
   updatedAt?: string;
 };
@@ -61,7 +86,8 @@ export type PlanItem = {
   image?: string;
   note?: string;
   priority: 'low' | 'medium' | 'high';
-  assignee: '一起' | '我' | '你';
+  assignee: AssignedRole;
+  createdByRole?: SpaceRole;
   completedAt?: string;
   version?: number;
   updatedAt?: string;

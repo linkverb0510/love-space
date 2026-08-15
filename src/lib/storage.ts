@@ -1,10 +1,11 @@
 import { migrateLegacySpaceData } from './domain';
 import { SPACE_TIMEZONE } from './dates';
+import { normalizeAssignee, normalizeRole } from './roles';
 import type { SpaceData } from '../types';
 
 const STORAGE_KEY = 'love-space-data-v3';
 const LEGACY_STORAGE_KEY = 'love-space-demo-data';
-const DATA_VERSION = 3;
+const DATA_VERSION = 4;
 
 export const EMPTY_SPACE_DATA: SpaceData = {
   schemaVersion: DATA_VERSION,
@@ -26,7 +27,16 @@ export function toPersistedSpaceData(data: SpaceData): SpaceData {
   return {
     ...normalized,
     schemaVersion: DATA_VERSION,
-    photos: normalized.photos.map((photo) => photo.assetKey ? { ...photo, src: '' } : photo)
+    photos: normalized.photos.map((photo) => {
+      if (!photo.assetKey && !photo.thumbnailAssetKey && !photo.originalAssetKey && !photo.motionAssetKey) return photo;
+      return {
+        ...photo,
+        src: '',
+        thumbnailSrc: '',
+        originalSrc: '',
+        motionSrc: ''
+      };
+    })
   };
 }
 
@@ -47,9 +57,9 @@ function normalizeSpaceData(value: unknown): SpaceData {
     spaceName: data.spaceName || EMPTY_SPACE_DATA.spaceName,
     relationshipStart: data.relationshipStart || null,
     timezone: SPACE_TIMEZONE,
-    timeline: (data.timeline ?? []).map((entry) => ({ ...entry, version: entry.version ?? 1 })),
-    photos: (data.photos ?? []).map((photo) => ({ ...photo, version: photo.version ?? 1 })),
-    plans: (data.plans ?? []).map((plan) => ({ ...plan, version: plan.version ?? 1 })),
+    timeline: (data.timeline ?? []).map((entry) => ({ ...entry, createdByRole: normalizeRole(entry.createdByRole), version: entry.version ?? 1 })),
+    photos: (data.photos ?? []).map((photo) => ({ ...photo, createdByRole: normalizeRole(photo.createdByRole), version: photo.version ?? 1 })),
+    plans: (data.plans ?? []).map((plan) => ({ ...plan, assignee: normalizeAssignee(plan.assignee), createdByRole: normalizeRole(plan.createdByRole), version: plan.version ?? 1 })),
     version: data.version ?? 1
   };
 }
@@ -73,7 +83,7 @@ export function loadSpaceData(): SpaceData {
     return normalized;
   } catch {
     const initial = cloneEmptySpace();
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+    window.localStorage.setItem(`${STORAGE_KEY}-recovery`, saved);
     return initial;
   }
 }

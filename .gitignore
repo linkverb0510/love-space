@@ -9,4 +9,5 @@ output/playwright/
 .superpowers/
 .vercel/
 tmp/
+tmp_*
 Program

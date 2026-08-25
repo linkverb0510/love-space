@@ -1,7 +1,10 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { getPublicAssetPath } from './public-asset-path';
 import { MATERIAL_ASSETS, getRoleAccent, getSurfaceDecorations } from './visual-assets';
+
+const stylesPath = fileURLToPath(new URL('../styles.css', import.meta.url));
 
 const publicAssetsDirectory = fileURLToPath(new URL('../../public/assets/', import.meta.url));
 
@@ -10,23 +13,23 @@ describe('visual asset planning', () => {
     const assets = getSurfaceDecorations('home', 'desktop');
 
     expect(assets[0].kind).toBe('paper');
-    expect(assets[1].src).toBe('/assets/stickers/strawberry.svg');
+    expect(assets[1].src).toBe(getPublicAssetPath('assets/stickers/strawberry.svg'));
   });
 
   it('registers local floral stickers with the existing dessert illustration license', () => {
-    expect(MATERIAL_ASSETS.roseBouquet.src).toBe('/assets/stickers/rose-bouquet.svg');
-    expect(MATERIAL_ASSETS.rose.src).toBe('/assets/stickers/rose.svg');
+    expect(MATERIAL_ASSETS.roseBouquet.src).toBe(getPublicAssetPath('assets/stickers/rose-bouquet.svg'));
+    expect(MATERIAL_ASSETS.rose.src).toBe(getPublicAssetPath('assets/stickers/rose.svg'));
     expect(MATERIAL_ASSETS.roseBouquet.attribution.license).toBe('CC-BY-4.0');
     expect(MATERIAL_ASSETS.rose.attribution.license).toBe('CC-BY-4.0');
   });
 
   it('adds floral clusters on desktop without increasing the mobile decoration budget', () => {
     expect(getSurfaceDecorations('home', 'desktop').map((asset) => asset.src)).toEqual([
-      '/assets/materials/cotton-jersey-diffuse-cc0.jpg',
-      '/assets/stickers/strawberry.svg',
-      '/assets/stickers/ribbon.svg',
-      '/assets/stickers/rose-bouquet.svg',
-      '/assets/stickers/rose.svg'
+      getPublicAssetPath('assets/materials/cotton-jersey-diffuse-cc0.jpg'),
+      getPublicAssetPath('assets/stickers/strawberry.svg'),
+      getPublicAssetPath('assets/stickers/ribbon.svg'),
+      getPublicAssetPath('assets/stickers/rose-bouquet.svg'),
+      getPublicAssetPath('assets/stickers/rose.svg')
     ]);
     expect(getSurfaceDecorations('home', 'mobile')).toHaveLength(2);
     expect(getSurfaceDecorations('timeline', 'mobile')).toHaveLength(2);
@@ -52,7 +55,7 @@ describe('visual asset planning', () => {
 
   it('keeps every decorative asset local and records a reusable license source', () => {
     for (const asset of Object.values(MATERIAL_ASSETS)) {
-      expect(asset.src).toMatch(/^\/assets\//);
+      expect(asset.src).toMatch(new RegExp(`^${getPublicAssetPath('assets/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
       expect(asset.attribution.sourceUrl).toMatch(/^https:\/\//);
       expect(['CC0-1.0', 'CC-BY-4.0']).toContain(asset.attribution.license);
     }
@@ -63,7 +66,7 @@ describe('visual asset planning', () => {
     const publishedSources = (await Promise.all(
       directories.map(async (directory) => {
         const files = await readdir(`${publicAssetsDirectory}${directory}`);
-        return files.map((file) => `/assets/${directory}/${file}`);
+        return files.map((file) => getPublicAssetPath(`assets/${directory}/${file}`));
       })
     )).flat().sort();
     const documentedSources = Object.values(MATERIAL_ASSETS).map((asset) => asset.src).sort();
@@ -71,8 +74,15 @@ describe('visual asset planning', () => {
 
     expect(publishedSources).toEqual(documentedSources);
     for (const source of publishedSources) {
-      expect(attribution).toContain(`\`${source.replace('/assets/', '')}\``);
+      expect(attribution).toContain(`\`${source.replace(getPublicAssetPath('assets/'), '')}\``);
     }
+  });
+
+  it('does not hard-code a root-relative material background that breaks project-site hosting', async () => {
+    const styles = await readFile(stylesPath, 'utf8');
+
+    expect(styles).not.toContain("url('/assets/materials/cotton-jersey-diffuse-cc0.jpg')");
+    expect(styles).toContain('var(--cotton-lining-image)');
   });
 
 });

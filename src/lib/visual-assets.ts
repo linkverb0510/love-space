@@ -1,4 +1,5 @@
 import type { ActiveRole } from './roles';
+import { getPublicAssetPath } from './public-asset-path';
 
 export type VisualSurface = 'home' | 'timeline' | 'photos' | 'plans' | 'settings';
 export type VisualViewport = 'desktop' | 'mobile';
@@ -27,7 +28,7 @@ export type RoleAccent = {
 
 export const MATERIAL_ASSETS = {
   cottonLining: {
-    src: '/assets/materials/cotton-jersey-diffuse-cc0.jpg',
+    src: getPublicAssetPath('assets/materials/cotton-jersey-diffuse-cc0.jpg'),
     kind: 'paper',
     tone: 'blush',
     alt: '浅粉棉织物内衬',
@@ -39,7 +40,7 @@ export const MATERIAL_ASSETS = {
     }
   },
   strawberry: {
-    src: '/assets/stickers/strawberry.svg',
+    src: getPublicAssetPath('assets/stickers/strawberry.svg'),
     kind: 'sticker',
     tone: 'berry',
     alt: '草莓贴纸',
@@ -51,7 +52,7 @@ export const MATERIAL_ASSETS = {
     }
   },
   cherries: {
-    src: '/assets/stickers/cherries.svg',
+    src: getPublicAssetPath('assets/stickers/cherries.svg'),
     kind: 'sticker',
     tone: 'berry',
     alt: '樱桃贴纸',
@@ -63,7 +64,7 @@ export const MATERIAL_ASSETS = {
     }
   },
   shortcake: {
-    src: '/assets/stickers/shortcake.svg',
+    src: getPublicAssetPath('assets/stickers/shortcake.svg'),
     kind: 'sticker',
     tone: 'rose',
     alt: '草莓蛋糕贴纸',
@@ -75,7 +76,7 @@ export const MATERIAL_ASSETS = {
     }
   },
   strawberryDrink: {
-    src: '/assets/stickers/strawberry-drink.svg',
+    src: getPublicAssetPath('assets/stickers/strawberry-drink.svg'),
     kind: 'sticker',
     tone: 'blush',
     alt: '饮料杯贴纸',
@@ -87,7 +88,7 @@ export const MATERIAL_ASSETS = {
     }
   },
   ribbon: {
-    src: '/assets/stickers/ribbon.svg',
+    src: getPublicAssetPath('assets/stickers/ribbon.svg'),
     kind: 'sticker',
     tone: 'rose',
     alt: '蝴蝶结贴纸',
@@ -99,7 +100,7 @@ export const MATERIAL_ASSETS = {
     }
   },
   roseBouquet: {
-    src: '/assets/stickers/rose-bouquet.svg',
+    src: getPublicAssetPath('assets/stickers/rose-bouquet.svg'),
     kind: 'sticker',
     tone: 'rose',
     alt: '玫瑰花束贴纸',
@@ -111,7 +112,7 @@ export const MATERIAL_ASSETS = {
     }
   },
   rose: {
-    src: '/assets/stickers/rose.svg',
+    src: getPublicAssetPath('assets/stickers/rose.svg'),
     kind: 'sticker',
     tone: 'berry',
     alt: '玫瑰贴纸',

@@ -580,11 +580,12 @@ h1 em, h2 em, h3 em { font-family: 'Playfair Display', Georgia, serif; font-weig
   --role-both-ink: #6b3048;
   --blue-soft: #e8f4f8;
   --shadow: 0 16px 36px rgba(104, 57, 69, .12);
+  --cotton-lining-image: none;
 }
 
 body {
   background-color: var(--cream);
-  background-image: linear-gradient(rgba(255, 246, 246, .79), rgba(255, 246, 246, .79)), url('/assets/materials/cotton-jersey-diffuse-cc0.jpg');
+  background-image: linear-gradient(rgba(255, 246, 246, .79), rgba(255, 246, 246, .79)), var(--cotton-lining-image);
   background-size: auto, 520px 520px;
   background-blend-mode: screen, multiply;
 }

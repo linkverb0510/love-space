@@ -1,4 +1,5 @@
 import { ChangeEvent, CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import {
   ArrowUpRight,
   CalendarDays,
@@ -43,6 +44,8 @@ import { getActiveRole, getRoleLabel, saveActiveRole, type ActiveRole } from './
 import { getPublicAssetPath } from './lib/public-asset-path';
 import { LolitaPageDecor, LolitaPaperDecor, MaterialSticker } from './components/LolitaDecor';
 import { MATERIAL_ASSETS } from './lib/visual-assets';
+import { FilmStripDivider, PolaroidFrame, Postmark, StampFrame, StickyNote, StitchLine, TicketStub, WashiTape } from './components/scrapbook';
+import { itemFallIntoPlace, springSnappy, stackStagger, viewFadeRise } from './lib/motion-presets';
 import {
   EMPTY_SPACE_DATA,
   loadSpaceData,
@@ -173,20 +176,34 @@ function AccessGate({ client, email, onEnter }: { client: NonNullable<ReturnType
     <main className="access-screen">
       <div className="access-art" aria-hidden="true">
         <span className="access-stamp">two of us</span>
-        <div className="access-heart"><Heart size={54} fill="currentColor" strokeWidth={1.4} /></div>
+        <div className="access-envelope">
+          <div className="access-envelope-card">
+            <WashiTape tone="pink" to="left" />
+            <WashiTape tone="blue" to="right" />
+            <StampFrame className="access-seal">
+              <span className="access-heart"><Heart size={46} fill="currentColor" strokeWidth={1.2} /></span>
+            </StampFrame>
+            <div className="access-doodles">
+              <MaterialSticker asset={MATERIAL_ASSETS.ribbon} placement="doodle-a" tone="rose" size="sm" />
+              <MaterialSticker asset={MATERIAL_ASSETS.strawberry} placement="doodle-b" tone="berry" size="sm" />
+            </div>
+          </div>
+        </div>
         <span className="access-note">keep the little things</span>
       </div>
       <section className="access-panel">
+        <WashiTape tone="gold" to="center" className="tape-top" />
         <div className="brand-lockup"><span className="brand-mark"><Heart size={17} fill="currentColor" /></span><span>our little space</span></div>
         <div className="eyebrow">PRIVATE SPACE / AUTH</div>
         <h1>只属于你们的<br /><em>小小空间</em></h1>
+        <StitchLine />
         <p className="access-copy">把重要的日子、照片和还想一起完成的事，放在一个只属于你们的地方。</p>
         <form className="access-form" onSubmit={submit}>
           <label htmlFor="space-password">共同密码</label>
           <input className="visually-hidden" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" value="our-little-space" readOnly />
           <div className="input-with-icon"><KeyRound size={18} /><input id="space-password" value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="输入你们的密码" autoComplete="new-password" autoFocus /></div>
           {error && <p className="form-error">{error}</p>}
-          <button className="button button-dark button-wide" type="submit" disabled={checking}><LockKeyhole size={17} />{checking ? '验证中…' : '进入我们的空间'}</button>
+          <button className="button button-dark button-wide" type="submit" disabled={checking}><LockKeyhole size={17} />{checking ? '验证中…' : '拆开这封信'}</button>
         </form>
         <p className="access-footnote"><LockKeyhole size={14} /> 共同密码由私密空间的 Auth 服务验证。</p>
       </section>
@@ -240,6 +257,7 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
   const activeSheet = useRef<SheetState>(null);
   const pendingUploads = useRef<UploadItem[]>([]);
   const activeUploadCount = useRef(0);
+  const entryFocusPending = useRef(false);
 
   useEffect(() => {
     // CSS cannot read Vite's base path, so expose the resolved public URL at runtime.
@@ -304,9 +322,14 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
     const timeout = window.setTimeout(() => {
       document.getElementById(`timeline-${focusEntryId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setFocusEntryId(null);
+      entryFocusPending.current = false;
     }, 50);
     return () => window.clearTimeout(timeout);
   }, [view, focusEntryId]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => { if (!entryFocusPending.current) window.scrollTo({ top: 0 }); }, 60);
+    return () => window.clearTimeout(timeout);
+  }, [view]);
 
   function updateData(updater: (current: SpaceData) => SpaceData, message?: string) {
     setData((current) => updater(current));
@@ -315,7 +338,10 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
 
   function openView(nextView: ViewKey, entryId?: string) {
     setView(nextView);
-    if (entryId) setFocusEntryId(entryId);
+    if (entryId) {
+      entryFocusPending.current = true;
+      setFocusEntryId(entryId);
+    }
   }
 
   function canWrite(): boolean {
@@ -559,7 +585,10 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
   const editingReady = !readOnly && dataReady;
   const lolitaSurface = view === 'timeline' ? 'timeline' : view === 'photos' ? 'photos' : 'home';
 
+  const activeSheetNode = sheet?.type === 'timeline-detail' ? { key: 'sheet-timeline-detail', node: <TimelineDetailSheet entry={sheet.entry} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet(sheet.entry.type === 'memory' ? { type: 'memory-form', entry: sheet.entry } : { type: 'milestone-form', entry: sheet.entry })} onDelete={() => void deleteTimelineEntry(sheet.entry)} /> } : sheet?.type === 'memory-form' ? { key: 'sheet-memory-form', node: <MemoryForm entry={sheet.entry} draft={sheet.draft} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={(memory, attachments) => void saveTimelineEntry(memory, attachments)} /> } : sheet?.type === 'milestone-form' ? { key: 'sheet-milestone-form', node: <MilestoneForm entry={sheet.entry} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={saveTimelineEntry} /> } : sheet?.type === 'plan-form' ? { key: 'sheet-plan-form', node: <PlanForm plan={sheet.plan} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={savePlan} /> } : sheet?.type === 'photo-detail' ? { key: 'sheet-photo-detail', node: <PhotoDetailSheet photo={sheet.photo} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet({ type: 'photo-form', photo: sheet.photo })} onDelete={() => void deletePhoto(sheet.photo)} onOpenTimeline={(entryId) => { setSheet(null); openView('timeline', entryId); }} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} /> } : sheet?.type === 'photo-form' ? { key: 'sheet-photo-form', node: <PhotoForm photo={sheet.photo} timeline={timeline} onClose={() => setSheet(null)} onSubmit={savePhoto} /> } : sheet?.type === 'settings-form' ? { key: 'sheet-settings-form', node: <RelationshipSettingsForm relationshipStart={data.relationshipStart} onClose={() => setSheet(null)} onSubmit={saveRelationshipStart} /> } : null;
+
   return (
+    <MotionConfig reducedMotion="user">
     <div className="app-shell">
        <aside className="sidebar">
         <div className="sidebar-brand"><span className="brand-mark"><Heart size={17} fill="currentColor" /></span><div><strong>our little space</strong><small>just us, in one place</small></div></div>
@@ -572,23 +601,26 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
          {!readOnly && syncStatus !== 'clean' && <div className={`sync-banner sync-banner-${syncStatus}`} role={syncStatus === 'error' || syncStatus === 'conflict' ? 'alert' : 'status'}><span className="status-dot" /><span>{syncStatus === 'loading' ? '共享内容加载中，暂时不能编辑。' : syncStatus === 'saving' ? '正在保存最新修改…' : syncStatus === 'conflict' ? '内容已被另一台设备修改，请刷新后重试。' : '同步失败，请检查网络后重试。'}</span></div>}
          <div className="page-content">
            <LolitaPageDecor surface={lolitaSurface} />
-           {view === 'home' && <Dashboard data={data} activeRole={activeRole} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} timezone={data.timezone} readOnly={readOnly} canWrite={editingReady} openView={openView} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onAddPlan={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onSetRelationshipStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onTogglePlan={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} />}
-           {view === 'timeline' && <TimelineView entries={timeline} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onOpen={(entry) => setSheet({ type: 'timeline-detail', entry })} onEdit={(entry) => setSheet(entry.type === 'memory' ? { type: 'memory-form', entry } : { type: 'milestone-form', entry })} onDelete={(entry) => void deleteTimelineEntry(entry)} />}
-           {view === 'photos' && <PhotosView photos={data.photos} uploads={uploads} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onUpload={addPhotos} onOpen={(photo) => setSheet({ type: 'photo-detail', photo })} onOpenTimeline={(entryId) => openView('timeline', entryId)} onClearUpload={(id) => setUploads((current) => current.filter((item) => item.id !== id))} onRetry={retryUpload} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} />}
-           {view === 'plans' && <PlansView plans={data.plans} readOnly={readOnly} disabled={!editingReady} onAdd={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onEdit={(plan) => setSheet({ type: 'plan-form', plan })} onDelete={(plan) => void deletePlan(plan)} onToggle={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} onWriteMemory={(plan) => { if (editingReady) setSheet({ type: 'memory-form', draft: { ...createMemoryDraftFromPlan(plan, todayString(data.timezone)), createdByRole: activeRole } }); else canWrite(); }} />}
-           {view === 'settings' && <SettingsView data={data} activeRole={activeRole} publicDemo={config.publicDemo} remoteMode={remoteMode} readOnly={readOnly} onReset={resetSpace} onEditStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onRoleChange={setActiveRole} onLock={onLock} />}
+           <AnimatePresence mode="wait" initial={false}>
+             <motion.div key={view} {...viewFadeRise}>
+              {view === 'home' && <Dashboard data={data} activeRole={activeRole} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} timezone={data.timezone} readOnly={readOnly} canWrite={editingReady} openView={openView} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onAddPlan={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onSetRelationshipStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onTogglePlan={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} />}
+              {view === 'timeline' && <TimelineView entries={timeline} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onOpen={(entry) => setSheet({ type: 'timeline-detail', entry })} onEdit={(entry) => setSheet(entry.type === 'memory' ? { type: 'memory-form', entry } : { type: 'milestone-form', entry })} onDelete={(entry) => void deleteTimelineEntry(entry)} />}
+              {view === 'photos' && <PhotosView photos={data.photos} uploads={uploads} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onUpload={addPhotos} onOpen={(photo) => setSheet({ type: 'photo-detail', photo })} onOpenTimeline={(entryId) => openView('timeline', entryId)} onClearUpload={(id) => setUploads((current) => current.filter((item) => item.id !== id))} onRetry={retryUpload} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} />}
+              {view === 'plans' && <PlansView plans={data.plans} readOnly={readOnly} disabled={!editingReady} onAdd={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onEdit={(plan) => setSheet({ type: 'plan-form', plan })} onDelete={(plan) => void deletePlan(plan)} onToggle={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} onWriteMemory={(plan) => { if (editingReady) setSheet({ type: 'memory-form', draft: { ...createMemoryDraftFromPlan(plan, todayString(data.timezone)), createdByRole: activeRole } }); else canWrite(); }} />}
+              {view === 'settings' && <SettingsView data={data} activeRole={activeRole} publicDemo={config.publicDemo} remoteMode={remoteMode} readOnly={readOnly} onReset={resetSpace} onEditStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onRoleChange={setActiveRole} onLock={onLock} />}
+             </motion.div>
+           </AnimatePresence>
         </div>
       </main>
       <nav className="mobile-nav" aria-label="移动端导航">{navItems.map((item) => <NavButton key={item.key} item={item} active={view === item.key} onClick={() => setView(item.key)} compact />)}</nav>
-       {sheet?.type === 'timeline-detail' && <TimelineDetailSheet entry={sheet.entry} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet(sheet.entry.type === 'memory' ? { type: 'memory-form', entry: sheet.entry } : { type: 'milestone-form', entry: sheet.entry })} onDelete={() => void deleteTimelineEntry(sheet.entry)} />}
-      {sheet?.type === 'memory-form' && <MemoryForm entry={sheet.entry} draft={sheet.draft} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={(memory, attachments) => void saveTimelineEntry(memory, attachments)} />}
-      {sheet?.type === 'milestone-form' && <MilestoneForm entry={sheet.entry} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={saveTimelineEntry} />}
-      {sheet?.type === 'plan-form' && <PlanForm plan={sheet.plan} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={savePlan} />}
-      {sheet?.type === 'photo-detail' && <PhotoDetailSheet photo={sheet.photo} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet({ type: 'photo-form', photo: sheet.photo })} onDelete={() => void deletePhoto(sheet.photo)} onOpenTimeline={(entryId) => { setSheet(null); openView('timeline', entryId); }} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} />}
-      {sheet?.type === 'photo-form' && <PhotoForm photo={sheet.photo} timeline={timeline} onClose={() => setSheet(null)} onSubmit={savePhoto} />}
-      {sheet?.type === 'settings-form' && <RelationshipSettingsForm relationshipStart={data.relationshipStart} onClose={() => setSheet(null)} onSubmit={saveRelationshipStart} />}
-      {toast && <div className="toast" role="status"><Check size={17} />{toast}</div>}
+      <AnimatePresence>
+        {activeSheetNode && <motion.div key={activeSheetNode.key} style={{ display: 'contents' }}>{activeSheetNode.node}</motion.div>}
+      </AnimatePresence>
+      <AnimatePresence>
+        {toast && <motion.div key="toast" className="toast" role="status" initial={{ opacity: 0, y: 16, scale: .96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: .97 }} transition={springSnappy}><Check size={17} />{toast}</motion.div>}
+      </AnimatePresence>
     </div>
+    </MotionConfig>
   );
 }
 
@@ -609,7 +641,7 @@ function RolePicker({ value, onChange, label = '添加者', includeBoth = true, 
 }
 
 function RolePair() {
-  return <div className="role-pair" aria-label="两个人的角色"><div className="role-pair-card" data-role="l"><span className="role-pair-letter">L</span><span><strong>海蓝色的 L</strong><small>留住细节的人</small></span></div><div className="role-pair-card" data-role="w"><span className="role-pair-letter">W</span><span><strong>粉色的 W</strong><small>让日子变甜的人</small></span></div></div>;
+  return <div className="role-pair" aria-label="两个人的角色"><div className="role-pair-card" data-role="l"><StampFrame className="role-pair-stamp"><span className="role-pair-letter">L</span></StampFrame><span><strong>海蓝色的 L</strong><small>留住细节的人</small></span></div><div className="role-pair-card" data-role="w"><StampFrame className="role-pair-stamp"><span className="role-pair-letter">W</span></StampFrame><span><strong>粉色的 W</strong><small>让日子变甜的人</small></span></div></div>;
 }
 
 function Dashboard({ data, activeRole, relationship, nextMilestone, recentEntry, recentPhoto, timezone, readOnly, canWrite, openView, onAddMemory, onAddMilestone, onAddPlan, onSetRelationshipStart, onTogglePlan }: { data: SpaceData; activeRole: ActiveRole; relationship: ReturnType<typeof getRelationshipDuration>; nextMilestone?: TimelineDisplayEntry; recentEntry?: TimelineDisplayEntry; recentPhoto?: Photo; timezone: string; readOnly: boolean; canWrite: boolean; openView: (view: ViewKey, id?: string) => void; onAddMemory: () => void; onAddMilestone: () => void; onAddPlan: () => void; onSetRelationshipStart: () => void; onTogglePlan: (plan: PlanItem) => void }) {
@@ -617,18 +649,18 @@ function Dashboard({ data, activeRole, relationship, nextMilestone, recentEntry,
   const today = formatDate(getDateInTimezone(new Date(), timezone), { weekday: 'long', month: 'long', day: 'numeric' });
   const planSummary = (plan: PlanItem) => plan.location ?? plan.note ?? (plan.dueDate ? formatShortDate(plan.dueDate) : '还没有补充说明');
   return <div className="dashboard-stack">
-    <section className="welcome-band lolita-paper"><LolitaPaperDecor /><div className="welcome-copy"><span className="eyebrow">{today}</span><h1>你好，<em>你们。</em></h1><p>今天也有一些小事，值得一起记住。</p><div className="active-role-note"><RoleBadge role={activeRole} prefix="现在由 " /><span>记录这一刻</span></div></div><div className="welcome-illustration"><MaterialSticker asset={MATERIAL_ASSETS.strawberry} tone="rose" placement="hero" size="lg" /><span className="welcome-illustration-caption">two people,<br />one timeline</span></div></section>
+    <section className="welcome-band lolita-paper"><WashiTape tone="pink" to="left" /><WashiTape tone="blue" to="right" /><LolitaPaperDecor /><div className="welcome-copy"><span className="eyebrow">{today}</span><h1>你好，<em>你们。</em></h1><StitchLine className="welcome-stitch" /><p>今天也有一些小事，值得一起记住。</p><div className="active-role-note"><RoleBadge role={activeRole} prefix="现在由 " /><span>记录这一刻</span></div></div><div className="welcome-illustration"><MaterialSticker asset={MATERIAL_ASSETS.strawberry} tone="rose" placement="hero" size="lg" /><span className="welcome-illustration-caption">two people,<br />one timeline</span></div></section>
     <RolePair />
-     <section className="relationship-grid"><div className="relationship-panel">{relationship ? <><div className="panel-label">我们已经</div><div className="duration"><strong>{relationship.years}</strong><span>年</span><strong>{relationship.months}</strong><span>个月</span><strong>{relationship.days}</strong><span>天</span></div><div className="duration-foot">共走过 {relationship.totalDays.toLocaleString()} 天 <span>·</span> 还会有更多</div><div className="relationship-line" /></> : <div className="relationship-empty"><div className="panel-label">OUR STARTING POINT</div><h3>还没有设置开始日</h3><p>填写后，这里会开始记录你们一起走过的时间。</p><button className="button button-light" onClick={onSetRelationshipStart} disabled={!canWrite}><CalendarDays size={16} />设置开始日</button></div>}</div><div className="anniversary-panel"><div className="panel-topline"><span className="tag tag-coral">UP NEXT</span>{nextMilestone && <button className="text-button" onClick={() => openView('timeline', nextMilestone.id)}>去时间线 <ArrowUpRight size={15} /></button>}</div><h3>{nextMilestone?.title ?? '添加一个重要日子'}</h3><p>{nextMilestone ? `${formatTimelineDate(nextMilestone, nextMilestone.nextOccurrence ?? nextMilestone.date)}${nextMilestone.location ? ` · ${nextMilestone.location}` : ''}` : '把下一个想庆祝的日子放进来。'}</p><div className="big-countdown">{nextMilestone ? <><strong>{nextMilestone.countdownDays}</strong><span>天后</span></> : <button className="button button-light" onClick={onAddMilestone} disabled={!canWrite}><Plus size={16} />添加日子</button>}</div></div></section>
+     <section className="relationship-grid"><div className="relationship-panel">{relationship ? <><div className="panel-label">我们已经</div><TicketStub className="duration-ticket"><div className="duration"><strong>{relationship.years}</strong><span>年</span><strong>{relationship.months}</strong><span>个月</span><strong>{relationship.days}</strong><span>天</span></div></TicketStub><div className="duration-foot">共走过 {relationship.totalDays.toLocaleString()} 天 <span>·</span> 还会有更多</div><div className="relationship-line" /></> : <div className="relationship-empty"><div className="panel-label">OUR STARTING POINT</div><h3>还没有设置开始日</h3><p>填写后，这里会开始记录你们一起走过的时间。</p><button className="button button-light" onClick={onSetRelationshipStart} disabled={!canWrite}><CalendarDays size={16} />设置开始日</button></div>}</div><div className="anniversary-panel"><div className="panel-topline"><span className="tag tag-coral">UP NEXT</span>{nextMilestone && <button className="text-button" onClick={() => openView('timeline', nextMilestone.id)}>去时间线 <ArrowUpRight size={15} /></button>}</div><h3>{nextMilestone?.title ?? '添加一个重要日子'}</h3><p>{nextMilestone ? `${formatTimelineDate(nextMilestone, nextMilestone.nextOccurrence ?? nextMilestone.date)}${nextMilestone.location ? ` · ${nextMilestone.location}` : ''}` : '把下一个想庆祝的日子放进来。'}</p><div className="big-countdown">{nextMilestone ? <Postmark value={nextMilestone.countdownDays} label="天以后见" /> : <button className="button button-light" onClick={onAddMilestone} disabled={!canWrite}><Plus size={16} />添加日子</button>}</div></div></section>
     <div className="section-heading"><div><span className="eyebrow">THE STORY SO FAR</span><h2>最近发生的事</h2></div><button className="text-button" onClick={() => openView('timeline')}>查看时间线 <ArrowUpRight size={15} /></button></div>
-     <section className="home-grid"><article className="memory-feature"><div className="feature-image" style={{ backgroundImage: recentPhoto ? `url(${recentPhoto.src})` : undefined }}><span className="image-caption">{recentPhoto?.caption ?? '还没有照片'}</span></div><div className="feature-copy"><div className="item-meta"><span>{recentEntry ? formatDate(recentEntry.date, { year: 'numeric', month: 'short', day: 'numeric' }) : '还没有回忆'}</span><span>{recentEntry?.location}</span></div><h3>{recentEntry?.title ?? '记录你们的第一条回忆'}</h3><p>{recentEntry?.type === 'memory' ? recentEntry.body : recentEntry?.note ?? '从一句话开始，把重要的瞬间留在这里。'}</p><div className="action-group"><button className="button button-outline" onClick={onAddMemory} disabled={!canWrite}><Plus size={16} />记录一件事</button>{recentEntry && <button className="text-button" onClick={() => openView('timeline', recentEntry.id)}>查看详情 <ArrowUpRight size={15} /></button>}</div></div></article><aside className="home-side-column"><div className="mini-section"><div className="section-heading compact-heading"><h3>接下来一起做 <span>{openPlans.length}</span></h3><button className="icon-button small" title="添加计划" aria-label="添加计划" onClick={onAddPlan} disabled={!canWrite}><Plus size={16} /></button></div>{openPlans.slice(0, 3).map((plan) => <PlanRow key={plan.id} plan={plan} onToggle={onTogglePlan} disabled={!canWrite} />)}{openPlans.length === 0 && <EmptyState text="还没有待完成的计划。" />}</div><div className="mini-section quote-section"><Sparkles size={17} /><p>把小事也认真记下来。</p><span>— 留给未来的你们</span></div></aside></section>
+     <section className="home-grid"><article className="memory-feature"><WashiTape tone="blue" to="right" className="tape-corner-a" /><div className="feature-image" style={{ backgroundImage: recentPhoto ? `url(${recentPhoto.src})` : undefined }}><span className="image-caption">{recentPhoto?.caption ?? '还没有照片'}</span></div><div className="feature-copy"><div className="item-meta"><span>{recentEntry ? formatDate(recentEntry.date, { year: 'numeric', month: 'short', day: 'numeric' }) : '还没有回忆'}</span><span>{recentEntry?.location}</span></div><h3>{recentEntry?.title ?? '记录你们的第一条回忆'}</h3><p>{recentEntry?.type === 'memory' ? recentEntry.body : recentEntry?.note ?? '从一句话开始，把重要的瞬间留在这里。'}</p><div className="action-group"><button className="button button-outline" onClick={onAddMemory} disabled={!canWrite}><Plus size={16} />记录一件事</button>{recentEntry && <button className="text-button" onClick={() => openView('timeline', recentEntry.id)}>查看详情 <ArrowUpRight size={15} /></button>}</div></div></article><aside className="home-side-column"><div className="mini-section"><div className="section-heading compact-heading"><h3>接下来一起做 <span>{openPlans.length}</span></h3><button className="icon-button small" title="添加计划" aria-label="添加计划" onClick={onAddPlan} disabled={!canWrite}><Plus size={16} /></button></div>{openPlans.slice(0, 3).map((plan) => <PlanRow key={plan.id} plan={plan} onToggle={onTogglePlan} disabled={!canWrite} />)}{openPlans.length === 0 && <EmptyState text="还没有待完成的计划。" />}</div><StickyNote className="mini-section quote-section"><Sparkles size={17} /><p>把小事也认真记下来。</p><span>— 留给未来的你们</span></StickyNote></aside></section>
     <div className="section-heading"><div><span className="eyebrow">FOR LATER / TOGETHER</span><h2>计划中的小事</h2></div><button className="text-button" onClick={() => openView('plans')}>查看全部 <ArrowUpRight size={15} /></button></div>
      <section className="plan-preview-grid">{openPlans.slice(0, 3).map((plan) => <article className="plan-preview" key={plan.id}><div className="plan-preview-icon"><ListTodo size={18} /></div><div><span className="tag tag-soft">{plan.type}</span><h3>{plan.title}</h3><p>{planSummary(plan)}</p></div><button className="text-button" onClick={() => openView('plans')}>查看计划 <ArrowUpRight size={15} /></button></article>)}{openPlans.length === 0 && <EmptyState text="把想去、想看、想一起完成的事放在这里。" />}</section>
   </div>;
 }
 
 function TimelineView({ entries, photos, readOnly, disabled, onAddMemory, onAddMilestone, onOpen, onEdit, onDelete }: { entries: TimelineDisplayEntry[]; photos: Photo[]; readOnly: boolean; disabled: boolean; onAddMemory: () => void; onAddMilestone: () => void; onOpen: (entry: TimelineDisplayEntry) => void; onEdit: (entry: TimelineDisplayEntry) => void; onDelete: (entry: TimelineDisplayEntry) => void }) {
-  return <div className="view-stack"><ViewIntro eyebrow="THE STORY SO FAR" title="回忆时间线" description="重要的日子和普通的日子，都在同一条线上像相册页一样留下来。" action={!readOnly && <div className="action-group"><button className="button button-outline" onClick={onAddMilestone} disabled={disabled}><CalendarDays size={16} />重要日子</button><button className="button button-dark" onClick={onAddMemory} disabled={disabled}><Plus size={17} />写一条回忆</button></div>} /><div className="timeline">{entries.map((entry, index) => <TimelineItem key={entry.id} entry={entry} photos={photos} index={index} readOnly={readOnly} disabled={disabled} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} />)}</div>{entries.length === 0 && <section className="timeline-empty"><div className="timeline-empty-mark"><Sparkles size={22} /></div><div><h3>第一张相册页还空着</h3><p>{readOnly ? '公开预览暂时没有内容。私密空间登录后可以开始记录。' : '从一条回忆或一个重要日子开始，慢慢把你们的故事放进来。'}</p>{!readOnly && <div className="action-group"><button className="button button-outline" onClick={onAddMilestone} disabled={disabled}><CalendarDays size={16} />添加重要日子</button><button className="button button-dark" onClick={onAddMemory} disabled={disabled}><Plus size={16} />写第一条回忆</button></div>}</div></section>}</div>;
+  return <div className="view-stack"><ViewIntro eyebrow="THE STORY SO FAR" title="回忆时间线" description="重要的日子和普通的日子，都在同一条线上像相册页一样留下来。" action={!readOnly && <div className="action-group"><button className="button button-outline" onClick={onAddMilestone} disabled={disabled}><CalendarDays size={16} />重要日子</button><button className="button button-dark" onClick={onAddMemory} disabled={disabled}><Plus size={17} />写一条回忆</button></div>} /><motion.div className="timeline" variants={stackStagger} initial="hidden" animate="show">{entries.map((entry, index) => <TimelineItem key={entry.id} entry={entry} photos={photos} index={index} readOnly={readOnly} disabled={disabled} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} />)}</motion.div>{entries.length === 0 && <section className="timeline-empty"><div className="timeline-empty-mark"><Sparkles size={22} /></div><div><h3>第一张相册页还空着</h3><p>{readOnly ? '公开预览暂时没有内容。私密空间登录后可以开始记录。' : '从一条回忆或一个重要日子开始，慢慢把你们的故事放进来。'}</p>{!readOnly && <div className="action-group"><button className="button button-outline" onClick={onAddMilestone} disabled={disabled}><CalendarDays size={16} />添加重要日子</button><button className="button button-dark" onClick={onAddMemory} disabled={disabled}><Plus size={16} />写第一条回忆</button></div>}</div></section>}</div>;
 }
 
 function TimelineItem({ entry, photos, index, readOnly, disabled, onOpen, onEdit, onDelete }: { entry: TimelineDisplayEntry; photos: Photo[]; index: number; readOnly: boolean; disabled: boolean; onOpen: (entry: TimelineDisplayEntry) => void; onEdit: (entry: TimelineDisplayEntry) => void; onDelete: (entry: TimelineDisplayEntry) => void }) {
@@ -637,7 +669,7 @@ function TimelineItem({ entry, photos, index, readOnly, disabled, onOpen, onEdit
   const isMilestone = entry.type === 'milestone';
   const isSystem = isMilestone && Boolean(entry.systemRole);
   const date = new Date(`${entry.date}T12:00:00`);
-  return <article id={`timeline-${entry.id}`} className={`timeline-item ${isMilestone ? 'milestone-item' : ''}`} style={{ '--timeline-index': index } as CSSProperties}><div className="timeline-date"><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat('zh-CN', { month: 'short', year: 'numeric' }).format(date)}</span></div><div className="timeline-dot"><span /></div><div className="memory-entry"><div className="memory-page"><button className="timeline-content-button" onClick={() => onOpen(entry)}>{cover ? <div className="memory-cover" style={{ backgroundImage: `url(${cover.src})` }}><span>{entryPhotos.length} 张照片</span></div> : <div className="memory-cover memory-cover-empty"><ImageIcon size={22} /><span>还没有照片</span></div>}<div className="memory-page-copy"><div className="memory-entry-top"><div><span className="item-meta">{isMilestone ? <span className="timeline-kind">重要日子</span> : entry.location ?? '未记录地点'} <span>·</span> {isSystem ? '关系起点' : isMilestone && entry.repeatAnnual ? '每年重复' : '回忆'}</span><h3>{entry.title}</h3></div><RoleBadge role={entry.createdByRole} prefix="由 " /></div><p>{isMilestone ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{!isMilestone && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{isMilestone && entry.nextOccurrence && <div className="milestone-countdown"><CalendarDays size={14} />下一次 {formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</div>}</div></button></div><div className="entry-actions">{!readOnly && !isSystem && <button className="icon-button subtle" title="编辑" aria-label={`编辑${entry.title}`} onClick={() => onEdit(entry)} disabled={disabled}><Pencil size={15} /></button>}{!readOnly && !isSystem && <button className="icon-button subtle danger-icon" title="删除" aria-label={`删除${entry.title}`} onClick={() => onDelete(entry)} disabled={disabled}><Trash2 size={15} /></button>}<button className="icon-button subtle" title="查看详情" aria-label={`查看${entry.title}`} onClick={() => onOpen(entry)}><MoreHorizontal size={16} /></button></div></div></article>;
+  return <motion.article id={`timeline-${entry.id}`} className={`timeline-item ${isMilestone ? 'milestone-item' : ''}`} variants={itemFallIntoPlace} style={{ '--timeline-index': index } as CSSProperties}><div className="timeline-date"><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat('zh-CN', { month: 'short', year: 'numeric' }).format(date)}</span></div><div className="timeline-dot"><span /></div><div className="memory-entry"><div className="memory-page"><button className="timeline-content-button" onClick={() => onOpen(entry)}>{cover ? <div className="memory-cover" style={{ backgroundImage: `url(${cover.src})` }}><span>{entryPhotos.length} 张照片</span></div> : <div className="memory-cover memory-cover-empty"><ImageIcon size={22} /><span>还没有照片</span></div>}<div className="memory-page-copy"><div className="memory-entry-top"><div><span className="item-meta">{isMilestone ? <span className="timeline-kind">重要日子</span> : entry.location ?? '未记录地点'} <span>·</span> {isSystem ? '关系起点' : isMilestone && entry.repeatAnnual ? '每年重复' : '回忆'}</span><h3>{entry.title}</h3></div><RoleBadge role={entry.createdByRole} prefix="由 " /></div><p>{isMilestone ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{!isMilestone && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{isMilestone && entry.nextOccurrence && <div className="milestone-countdown"><CalendarDays size={14} />下一次 {formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</div>}</div></button></div><div className="entry-actions">{!readOnly && !isSystem && <button className="icon-button subtle" title="编辑" aria-label={`编辑${entry.title}`} onClick={() => onEdit(entry)} disabled={disabled}><Pencil size={15} /></button>}{!readOnly && !isSystem && <button className="icon-button subtle danger-icon" title="删除" aria-label={`删除${entry.title}`} onClick={() => onDelete(entry)} disabled={disabled}><Trash2 size={15} /></button>}<button className="icon-button subtle" title="查看详情" aria-label={`查看${entry.title}`} onClick={() => onOpen(entry)}><MoreHorizontal size={16} /></button></div></div></motion.article>;
 }
 
 function formatMonthLabel(month: string): string {
@@ -653,11 +685,22 @@ function photoAspectRatio(photo: Photo): number {
   return Math.min(1.65, Math.max(.72, photo.width / photo.height));
 }
 
+function useScrapbookViewport(): boolean {
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia('(max-width: 700px)').matches);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 700px)');
+    const listener = (event: MediaQueryListEvent) => setIsNarrow(event.matches);
+    query.addEventListener('change', listener);
+    return () => query.removeEventListener('change', listener);
+  }, []);
+  return isNarrow;
+}
+
 function PhotosView({ photos, uploads, timeline, readOnly, disabled, onUpload, onOpen, onOpenTimeline, onClearUpload, onRetry, getAsset }: { photos: Photo[]; uploads: UploadItem[]; timeline: TimelineDisplayEntry[]; readOnly: boolean; disabled: boolean; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: (photo: Photo) => void; onOpenTimeline: (entryId: string) => void; onClearUpload: (id: string) => void; onRetry: (item: UploadItem) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
   const groups = groupPhotosByDate(photos);
   return <div className="view-stack">
     <ViewIntro eyebrow="THE LITTLE DETAILS" title="照片" description={`${photos.length} 张照片，把普通日子串成一面墙。`} action={!readOnly && <label className="button button-dark"><Upload size={17} />选择照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={onUpload} disabled={disabled} /></label>} />
-    {groups.length > 0 ? <div className="photo-timeline" aria-label="照片时间线">{groups.map((month) => <section className="photo-month" key={month.month} aria-labelledby={`photo-month-${month.month}`}><div className="photo-month-heading"><span className="photo-month-knot" aria-hidden="true" /><h2 id={`photo-month-${month.month}`}>{formatMonthLabel(month.month)}</h2></div>{month.days.map((day) => <section className="photo-day" key={day.date} aria-labelledby={`photo-day-${day.date}`}><div className="photo-day-heading"><time id={`photo-day-${day.date}`} dateTime={day.date}>{formatPhotoDay(day.date)}</time><span>{day.photos.length} 张照片</span></div><div className="photo-rope-row">{day.photos.map((photo, index) => <PhotoCard key={photo.id} photo={photo} index={index} timeline={timeline} onOpen={onOpen} onOpenTimeline={onOpenTimeline} getAsset={getAsset} />)}</div></section>)}</section>)}</div> : <EmptyState text={readOnly ? '公开预览暂无照片。' : '还没有照片，选几张你们的日常吧。'} />}
+    {groups.length > 0 ? <div className="photo-timeline" aria-label="照片时间线">{groups.map((month) => <section className="photo-month" key={month.month} aria-labelledby={`photo-month-${month.month}`}><div className="photo-month-heading"><span className="photo-month-knot" aria-hidden="true" /><h2 id={`photo-month-${month.month}`}>{formatMonthLabel(month.month)}</h2><FilmStripDivider className="month-strip" /></div>{month.days.map((day) => <section className="photo-day" key={day.date} aria-labelledby={`photo-day-${day.date}`}><div className="photo-day-heading"><time id={`photo-day-${day.date}`} dateTime={day.date}>{formatPhotoDay(day.date)}</time><span>{day.photos.length} 张照片</span></div><div className="photo-rope-row">{day.photos.map((photo, index) => <PhotoCard key={photo.id} photo={photo} index={index} timeline={timeline} onOpen={onOpen} onOpenTimeline={onOpenTimeline} getAsset={getAsset} />)}</div></section>)}</section>)}</div> : <EmptyState text={readOnly ? '公开预览暂无照片。' : '还没有照片，选几张你们的日常吧。'} />}
     {uploads.length > 0 && <UploadQueue uploads={uploads} onClear={onClearUpload} onRetry={onRetry} />}
     {photos.length > 0 && <p className="view-note"><Camera size={16} /> 原图保留，照片墙按屏幕尺寸加载展示版。</p>}
   </div>;
@@ -666,9 +709,11 @@ function PhotosView({ photos, uploads, timeline, readOnly, disabled, onUpload, o
 function PhotoCard({ photo, index, timeline, onOpen, onOpenTimeline, getAsset }: { photo: Photo; index: number; timeline: TimelineDisplayEntry[]; onOpen: (photo: Photo) => void; onOpenTimeline: (entryId: string) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
   const [refreshedSrc, setRefreshedSrc] = useState<string>();
   const [hasRetriedSource, setHasRetriedSource] = useState(false);
+  const isNarrow = useScrapbookViewport();
   const linkedEntry = photo.timelineEntryId ? timeline.find((entry) => entry.id === photo.timelineEntryId) : undefined;
   const displaySrc = refreshedSrc || photo.thumbnailSrc || photo.src;
   const srcSet = refreshedSrc ? undefined : photo.thumbnailSrc && photo.src && photo.thumbnailSrc !== photo.src ? `${photo.thumbnailSrc} 720w, ${photo.src} 2048w` : undefined;
+  const restingRotation = isNarrow ? -0.7 : index % 2 === 0 ? -1.1 : 1.1;
 
   async function refreshExpiredSource() {
     if (hasRetriedSource) return;
@@ -677,18 +722,25 @@ function PhotoCard({ photo, index, timeline, onOpen, onOpenTimeline, getAsset }:
     if (source) setRefreshedSrc(source);
   }
 
-  return <article className={`photo-hanging-card ${index % 2 === 0 ? 'hang-left' : 'hang-right'} ${photo.mediaKind === 'live' ? 'is-live' : ''}`} style={{ '--photo-ratio': photoAspectRatio(photo) } as CSSProperties}>
+  return <motion.article
+    className={`photo-hanging-card ${index % 2 === 0 ? 'hang-left' : 'hang-right'} ${photo.mediaKind === 'live' ? 'is-live' : ''}`}
+    style={{ '--photo-ratio': photoAspectRatio(photo) } as CSSProperties}
+    initial={{ opacity: 0, y: 26, rotate: restingRotation * 2.4 }}
+    whileInView={{ opacity: 1, y: 0, rotate: restingRotation }}
+    viewport={{ once: true, margin: '0px 0px -36px 0px' }}
+    whileHover={{ y: -6, rotate: 0 }}
+    transition={{ type: 'spring', stiffness: 260, damping: 25 }}>
     <span className="photo-clip" aria-hidden="true" />
     <button className="photo-card-main" onClick={() => onOpen(photo)} aria-label={`查看${photo.caption || '照片'}`}>
-      <div className="photo-frame">{photo.previewAvailable === false ? <div className="photo-unavailable"><ImageIcon size={22} /><span>当前浏览器无法预览原格式</span></div> : <img src={displaySrc} srcSet={srcSet} sizes="(max-width: 700px) 82vw, 360px" alt={photo.caption || '照片'} loading="lazy" decoding="async" onError={() => void refreshExpiredSource()} />}{photo.mediaKind === 'live' && <span className="photo-live-badge"><Play size={11} fill="currentColor" />动态</span>}</div>
+      <motion.div className="photo-frame" layoutId={`photo-${photo.id}`}>{photo.previewAvailable === false ? <div className="photo-unavailable"><ImageIcon size={22} /><span>当前浏览器无法预览原格式</span></div> : <img src={displaySrc} srcSet={srcSet} sizes="(max-width: 700px) 82vw, 360px" alt={photo.caption || '照片'} loading="lazy" decoding="async" onError={() => void refreshExpiredSource()} />}{photo.mediaKind === 'live' && <span className="photo-live-badge"><Play size={11} fill="currentColor" />动态</span>}</motion.div>
       <div className="photo-card-copy"><div className="photo-card-title"><strong>{photo.caption || '未命名照片'}</strong><RoleBadge role={photo.createdByRole} prefix="由 " /></div><time dateTime={photo.date}>{formatShortDate(photo.date)}</time></div>
     </button>
     {linkedEntry && <button className="photo-memory-link" onClick={() => onOpenTimeline(linkedEntry.id)}><span>{linkedEntry.title}</span><ArrowUpRight size={13} /></button>}
-  </article>;
+  </motion.article>;
 }
 
 function UploadQueue({ uploads, onClear, onRetry }: { uploads: UploadItem[]; onClear: (id: string) => void; onRetry: (item: UploadItem) => void }) {
-  return <section className="upload-queue"><div className="section-heading compact-heading"><h3>上传队列</h3><span className="queue-count">{uploads.filter((item) => item.status === 'done').length}/{uploads.length}</span></div>{uploads.map((item) => <div className="upload-row" key={item.id}><div className="upload-row-copy"><strong>{item.name}</strong><span>{item.status === 'failed' ? item.error : item.stage}</span></div><div className={`upload-progress ${item.status === 'preparing' || item.status === 'uploading' ? 'is-active' : ''}`}><span className={item.status === 'done' ? 'is-complete' : ''} /></div>{item.status === 'failed' && item.retryable !== false ? <button className="text-button" onClick={() => onRetry(item)}>重试</button> : <button className="icon-button small" title="移除上传记录" aria-label="移除上传记录" onClick={() => onClear(item.id)}><X size={14} /></button>}</div>)}</section>;
+  return <section className="upload-queue"><div className="section-heading compact-heading"><h3>上传队列</h3><span className="queue-count">{uploads.filter((item) => item.status === 'done').length}/{uploads.length}</span></div><AnimatePresence initial={false}>{uploads.map((item) => <motion.div className="upload-row" key={item.id} layout initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 32 }}><div className="upload-row-copy"><strong>{item.name}</strong><span>{item.status === 'failed' ? item.error : item.stage}</span></div><div className={`upload-progress ${item.status === 'preparing' || item.status === 'uploading' ? 'is-active' : ''}`}><span className={item.status === 'done' ? 'is-complete' : ''} /></div>{item.status === 'failed' && item.retryable !== false ? <button className="text-button" onClick={() => onRetry(item)}>重试</button> : <button className="icon-button small" title="移除上传记录" aria-label="移除上传记录" onClick={() => onClear(item.id)}><X size={14} /></button>}</motion.div>)}</AnimatePresence></section>;
 }
 
 function PhotoDetailSheet({ photo, timeline, readOnly, disabled, onClose, onEdit, onDelete, onOpenTimeline, getAsset }: { photo: Photo; timeline: TimelineDisplayEntry[]; readOnly: boolean; disabled: boolean; onClose: () => void; onEdit: () => void; onDelete: () => void; onOpenTimeline: (entryId: string) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
@@ -722,14 +774,14 @@ function PhotoDetailSheet({ photo, timeline, readOnly, disabled, onClose, onEdit
     }
   }
 
-  return <Sheet title={photo.caption || '照片详情'} eyebrow={photo.mediaKind === 'live' ? 'LIVE PHOTO' : 'PHOTO'} onClose={onClose}><div className="photo-detail-hero">{photo.previewAvailable === false ? <div className="photo-unavailable"><ImageIcon size={26} /><span>当前浏览器无法预览原格式，可直接打开原图</span></div> : <img src={photo.src} alt={photo.caption || '照片'} />}{photo.mediaKind === 'live' && motionSrc && <video src={motionSrc} poster={photo.previewAvailable === false ? undefined : photo.src} controls playsInline preload="metadata" />}</div><div className="detail-meta"><RoleBadge role={photo.createdByRole} prefix="由 " /><span><Camera size={13} />{formatDate(photo.date, { year: 'numeric', month: 'long', day: 'numeric' })}</span>{photo.originalBytes && <span>· {Math.round(photo.originalBytes / 1024 / 1024 * 10) / 10}MB 原图</span>}</div>{linkedEntry && <button className="photo-detail-memory" onClick={() => onOpenTimeline(linkedEntry.id)}><Film size={16} /><span>关联回忆：{linkedEntry.title}</span><ArrowUpRight size={15} /></button>}{assetError && <p className="form-error">{assetError}</p>}<div className="form-actions">{!readOnly && !disabled && <><button className="button button-outline" onClick={onEdit}><Pencil size={16} />编辑</button><button className="button button-danger" onClick={onDelete}><Trash2 size={16} />删除</button></>}<button className="button button-dark" onClick={() => void openOriginal()}><Download size={16} />打开原图</button></div></Sheet>;
+  return <Sheet title={photo.caption || '照片详情'} eyebrow={photo.mediaKind === 'live' ? 'LIVE PHOTO' : 'PHOTO'} onClose={onClose}><PolaroidFrame caption={`${photo.caption || '未命名照片'} · ${formatShortDate(photo.date)}`} rotate={-0.5} className="detail-polaroid"><motion.div className="photo-detail-hero" layoutId={`photo-${photo.id}`}>{photo.previewAvailable === false ? <div className="photo-unavailable"><ImageIcon size={26} /><span>当前浏览器无法预览原格式，可直接打开原图</span></div> : <img src={photo.src} alt={photo.caption || '照片'} />}{photo.mediaKind === 'live' && motionSrc && <video src={motionSrc} poster={photo.previewAvailable === false ? undefined : photo.src} controls playsInline preload="metadata" />}</motion.div></PolaroidFrame><div className="detail-meta"><RoleBadge role={photo.createdByRole} prefix="由 " /><span><Camera size={13} />{formatDate(photo.date, { year: 'numeric', month: 'long', day: 'numeric' })}</span>{photo.originalBytes && <span>· {Math.round(photo.originalBytes / 1024 / 1024 * 10) / 10}MB 原图</span>}</div>{linkedEntry && <button className="photo-detail-memory" onClick={() => onOpenTimeline(linkedEntry.id)}><Film size={16} /><span>关联回忆：{linkedEntry.title}</span><ArrowUpRight size={15} /></button>}{assetError && <p className="form-error">{assetError}</p>}<div className="form-actions">{!readOnly && !disabled && <><button className="button button-outline" onClick={onEdit}><Pencil size={16} />编辑</button><button className="button button-danger" onClick={onDelete}><Trash2 size={16} />删除</button></>}<button className="button button-dark" onClick={() => void openOriginal()}><Download size={16} />打开原图</button></div></Sheet>;
 }
 
 function PlansView({ plans, readOnly, disabled, onAdd, onEdit, onDelete, onToggle, onWriteMemory }: { plans: PlanItem[]; readOnly: boolean; disabled: boolean; onAdd: () => void; onEdit: (plan: PlanItem) => void; onDelete: (plan: PlanItem) => void; onToggle: (plan: PlanItem) => void; onWriteMemory: (plan: PlanItem) => void }) {
   const active = plans.filter((plan) => plan.status !== '已完成' && plan.status !== '搁置');
   const completed = plans.filter((plan) => plan.status === '已完成');
   const paused = plans.filter((plan) => plan.status === '搁置');
-  return <div className="view-stack"><ViewIntro eyebrow="FOR LATER / TOGETHER" title="计划" description="把想去、想看、想买和想一起完成的事，放在同一份清单里。" action={!readOnly && <button className="button button-dark" onClick={onAdd} disabled={disabled}><Plus size={17} />添加计划</button>} /><section className="task-board"><div className="task-board-head"><div><span className="eyebrow">OPEN PLANS</span><h2>{active.length} 件进行中</h2></div><div className="progress-ring"><span>{Math.round((completed.length / Math.max(plans.length, 1)) * 100)}%</span></div></div><div className="task-list">{active.map((plan) => <PlanRow key={plan.id} plan={plan} large disabled={disabled} onToggle={onToggle} onEdit={!readOnly ? onEdit : undefined} onDelete={!readOnly ? onDelete : undefined} />)}</div>{completed.length > 0 && <><div className="task-divider"><span>已完成</span></div><div className="task-list completed-list">{completed.map((plan) => <PlanRow key={plan.id} plan={plan} large disabled={disabled} onToggle={onToggle} onEdit={!readOnly ? onEdit : undefined} onDelete={!readOnly ? onDelete : undefined} onWriteMemory={!readOnly ? onWriteMemory : undefined} />)}</div></>}{paused.length > 0 && <><div className="task-divider"><span>暂时搁置</span></div><div className="task-list completed-list">{paused.map((plan) => <PlanRow key={plan.id} plan={plan} large disabled={disabled} onToggle={onToggle} onEdit={!readOnly ? onEdit : undefined} onDelete={!readOnly ? onDelete : undefined} />)}</div></>}</section></div>;
+  return <div className="view-stack"><ViewIntro eyebrow="FOR LATER / TOGETHER" title="计划" description="把想去、想看、想买和想一起完成的事，放在同一份清单里。" action={!readOnly && <button className="button button-dark" onClick={onAdd} disabled={disabled}><Plus size={17} />添加计划</button>} /><section className="task-board"><div className="task-board-head"><div><span className="eyebrow">OPEN PLANS</span><h2>{active.length} 件进行中</h2></div><Postmark value={`${Math.round((completed.length / Math.max(plans.length, 1)) * 100)}%`} label="已完成" /></div><div className="task-list">{active.map((plan) => <PlanRow key={plan.id} plan={plan} large disabled={disabled} onToggle={onToggle} onEdit={!readOnly ? onEdit : undefined} onDelete={!readOnly ? onDelete : undefined} />)}</div>{completed.length > 0 && <><div className="task-divider"><span>已完成</span></div><div className="task-list completed-list">{completed.map((plan) => <PlanRow key={plan.id} plan={plan} large disabled={disabled} onToggle={onToggle} onEdit={!readOnly ? onEdit : undefined} onDelete={!readOnly ? onDelete : undefined} onWriteMemory={!readOnly ? onWriteMemory : undefined} />)}</div></>}{paused.length > 0 && <><div className="task-divider"><span>暂时搁置</span></div><div className="task-list completed-list">{paused.map((plan) => <PlanRow key={plan.id} plan={plan} large disabled={disabled} onToggle={onToggle} onEdit={!readOnly ? onEdit : undefined} onDelete={!readOnly ? onDelete : undefined} />)}</div></>}</section></div>;
 }
 
 function PlanRow({ plan, large = false, disabled = false, onToggle, onEdit, onDelete, onWriteMemory }: { plan: PlanItem; large?: boolean; disabled?: boolean; onToggle: (plan: PlanItem) => void; onEdit?: (plan: PlanItem) => void; onDelete?: (plan: PlanItem) => void; onWriteMemory?: (plan: PlanItem) => void }) {
@@ -858,7 +910,7 @@ function Sheet({ title, eyebrow, children, onClose }: { title: string; eyebrow: 
     };
   }, [onClose]);
 
-  return <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialogRef} className="sheet" role="dialog" aria-modal="true" aria-label={title}><div className="sheet-handle" aria-hidden="true" /><div className="modal-head"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div><button className="icon-button" title="关闭" aria-label="关闭" onClick={onClose}><X size={19} /></button></div>{children}</section></div>;
+  return <motion.div className="sheet-backdrop" role="presentation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><motion.section ref={dialogRef} className="sheet" role="dialog" aria-modal="true" aria-label={title} initial={{ opacity: 0, y: 46, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 30, scale: .98 }} transition={{ type: 'spring', stiffness: 340, damping: 30 }}><div className="sheet-handle" aria-hidden="true" /><div className="modal-head"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div><button className="icon-button" title="关闭" aria-label="关闭" onClick={onClose}><X size={19} /></button></div>{children}</motion.section></motion.div>;
 }
 
 function FormActions({ onClose, submitLabel }: { onClose: () => void; submitLabel: string }) {

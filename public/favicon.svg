@@ -1,4 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="16" fill="#2f6f68"/>
-  <path d="M32 48S14 37.2 14 24.8C14 18.9 17.8 15 23.1 15c3.5 0 6.7 2.1 8.9 5.5C34.2 17.1 37.4 15 40.9 15 46.2 15 50 18.9 50 24.8 50 37.2 32 48 32 48Z" fill="#f7f4ef"/>
+  <!-- Our Little Space favicon:迷你拍立得 + 双色爱心 -->
+  <defs>
+    <linearGradient id="fs" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#DCEBF3"/>
+      <stop offset="1" stop-color="#F8DEE8"/>
+    </linearGradient>
+    <path id="fh" d="M32 50l-3.6-3.2C20.5 39.9 15 35 15 27.8c0-5.7 4.5-10.1 10.1-10.1 3.2 0 6.1 1.5 7.7 4 .2.3.7.3.9 0 1.6-2.5 4.5-4 7.7-4C47 17.7 51.5 22.1 51.5 27.8c0 7.2-5.5 12.1-13.4 19L32 50z"/>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#FAF1EB"/>
+  <g transform="rotate(-5 32 32)">
+    <rect x="11" y="9" width="42" height="49" rx="3" fill="#FFFEFB"/>
+    <rect x="15" y="13" width="34" height="31" rx="2" fill="url(#fs)"/>
+    <use href="#fh" fill="#4E87A6" opacity=".9" transform="translate(13 11) scale(0.55)"/>
+    <use href="#fh" fill="#D78CA6" opacity=".95" transform="translate(24 16) scale(0.62)"/>
+    <line x1="23" y1="51" x2="41" y2="51" stroke="#B25E7C" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+  </g>
 </svg>

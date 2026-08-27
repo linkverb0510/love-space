@@ -8,12 +8,14 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
     "@vitejs/plugin-react": "^5.0.4",
     "lucide-react": "^0.468.0",
+    "motion": "^13.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^5.9.3",
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4"
+    "@types/react-dom": "^19.0.4",
+    "sharp": "^0.35.4"
   }
 }

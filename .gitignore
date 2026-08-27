@@ -11,3 +11,4 @@ output/playwright/
 tmp/
 tmp_*
 Program
+.zcode/

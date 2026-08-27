@@ -9,27 +9,30 @@ const stylesPath = fileURLToPath(new URL('../styles.css', import.meta.url));
 const publicAssetsDirectory = fileURLToPath(new URL('../../public/assets/', import.meta.url));
 
 describe('visual asset planning', () => {
-  it('keeps the home surface centered on local strawberry dessert materials', () => {
+  it('keeps the home surface centered on local dessert materials', () => {
     const assets = getSurfaceDecorations('home', 'desktop');
 
     expect(assets[0].kind).toBe('paper');
-    expect(assets[1].src).toBe(getPublicAssetPath('assets/stickers/strawberry.svg'));
+    expect(assets[1].src).toBe(getPublicAssetPath('assets/stickers/cupcake.svg'));
   });
 
   it('registers local floral stickers with the existing dessert illustration license', () => {
     expect(MATERIAL_ASSETS.roseBouquet.src).toBe(getPublicAssetPath('assets/stickers/rose-bouquet.svg'));
     expect(MATERIAL_ASSETS.rose.src).toBe(getPublicAssetPath('assets/stickers/rose.svg'));
+    expect(MATERIAL_ASSETS.cupcake.src).toBe(getPublicAssetPath('assets/stickers/cupcake.svg'));
+    expect(MATERIAL_ASSETS.birthdayCake.src).toBe(getPublicAssetPath('assets/stickers/birthday-cake.svg'));
     expect(MATERIAL_ASSETS.roseBouquet.attribution.license).toBe('CC-BY-4.0');
     expect(MATERIAL_ASSETS.rose.attribution.license).toBe('CC-BY-4.0');
+    expect(MATERIAL_ASSETS.cupcake.attribution.license).toBe('CC-BY-4.0');
   });
 
-  it('adds floral clusters on desktop without increasing the mobile decoration budget', () => {
+  it('adds dessert clusters on desktop without increasing the mobile decoration budget', () => {
     expect(getSurfaceDecorations('home', 'desktop').map((asset) => asset.src)).toEqual([
       getPublicAssetPath('assets/materials/cotton-jersey-diffuse-cc0.jpg'),
+      getPublicAssetPath('assets/stickers/cupcake.svg'),
+      getPublicAssetPath('assets/stickers/ice-cream.svg'),
       getPublicAssetPath('assets/stickers/strawberry.svg'),
-      getPublicAssetPath('assets/stickers/ribbon.svg'),
-      getPublicAssetPath('assets/stickers/rose-bouquet.svg'),
-      getPublicAssetPath('assets/stickers/rose.svg')
+      getPublicAssetPath('assets/stickers/ribbon.svg')
     ]);
     expect(getSurfaceDecorations('home', 'mobile')).toHaveLength(2);
     expect(getSurfaceDecorations('timeline', 'mobile')).toHaveLength(2);

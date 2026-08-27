@@ -17,8 +17,16 @@ Poly Haven assets are released under [CC0 1.0](https://polyhaven.com/license).
 - `stickers/ribbon.svg` - ribbon, Twemoji `1f380`
 - `stickers/rose-bouquet.svg` - bouquet, Twemoji `1f490`
 - `stickers/rose.svg` - rose, Twemoji `1f339`
+- `stickers/cupcake.svg` - cupcake, Twemoji `1f9c1`
+- `stickers/ice-cream.svg` - soft ice cream, Twemoji `1f366`
+- `stickers/doughnut.svg` - doughnut, Twemoji `1f369`
+- `stickers/candy.svg` - candy, Twemoji `1f36c`
+- `stickers/lollipop.svg` - lollipop, Twemoji `1f36d`
+- `stickers/custard.svg` - custard pudding, Twemoji `1f36e`
+- `stickers/bento.svg` - bento box, Twemoji `1f371`
+- `stickers/birthday-cake.svg` - birthday cake, Twemoji `1f382`
 
-The seven files above are by Twitter, Inc. and other contributors, sourced from [jdecked/twemoji](https://github.com/jdecked/twemoji), and licensed under **CC BY 4.0**. The original license text is retained at `LICENSES/TWEMOJI-GRAPHICS-CC-BY-4.0.txt`. The page adds only a CSS white die-cut edge and shadow; the SVG drawings are otherwise unchanged.
+The files above are by Twitter, Inc. and other contributors, sourced from [jdecked/twemoji](https://github.com/jdecked/twemoji) (distributed as the `@twemoji/svg` npm package), and licensed under **CC BY 4.0**. The original license text is retained at `LICENSES/TWEMOJI-GRAPHICS-CC-BY-4.0.txt`. The page adds only a CSS white die-cut edge and shadow; the SVG drawings are otherwise unchanged.
 
 ## Character Stickers
 

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Ma+Shan+Zheng&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&family=Special+Elite&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Ma+Shan+Zheng&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&family=Special+Elite&family=ZCOOL+KuaiLe&display=swap');
 
 /* ============================================================
    OUR LITTLE SPACE · retro film scrapbook system
@@ -71,7 +71,12 @@
   --font-body: 'DM Sans', 'Noto Sans SC', system-ui, sans-serif;
   --font-hand: 'Ma Shan Zheng', 'Kaiti SC', 'STKaiti', KaiTi, 'DM Sans', serif;
   --font-type: 'Special Elite', 'DM Mono', ui-monospace, monospace;
-  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-serif: 'Baloo 2', 'Ma Shan Zheng', Georgia, serif;
+  --font-cute: 'ZCOOL KuaiLe', 'Ma Shan Zheng', 'Kaiti SC', KaiTi, sans-serif;
+  --vanilla: #fff6e8;
+  --caramel: #c98d5e;
+  --cotton-candy: #fbdce8;
+  --cotton-blue: #d8ecf7;
   --cotton-lining-image: none;
 
   color: var(--ink);
@@ -645,6 +650,181 @@ h1, .view-intro h1, .welcome-band h1, .access-panel h1 { font-family: var(--font
 .detail-polaroid .polaroid-body { background: transparent; padding: 2px; }
 .detail-polaroid .photo-detail-hero { margin-bottom: 0; }
 .big-countdown .postmark { color: var(--blue-deep); }
+
+/* ============================================================
+   lolita dessert layer · 洛丽塔×古早甜品氛围(拉满)
+   蕾丝扇贝 / 钩花圆垫 / 糖果条纹 / 波点 / 果冻感 / 吊旗 / 奶油波浪 / 樱桃
+   全部纯 CSS,零新增图片资源。
+   ============================================================ */
+
+/* ---------- 波点底纹(全局 + 侧栏) ---------- */
+body {
+  background-image:
+    radial-gradient(rgba(215, 140, 166, .1) 2.1px, transparent 2.7px),
+    radial-gradient(rgba(78, 135, 166, .08) 2.1px, transparent 2.7px),
+    linear-gradient(rgba(255, 241, 240, .62), rgba(255, 241, 240, .62)),
+    var(--cotton-lining-image);
+  background-size: 30px 30px, 30px 30px, auto, 520px 520px;
+  background-position: 0 0, 15px 15px, 0 0, 0 0;
+  background-blend-mode: normal, normal, screen, multiply;
+}
+.sidebar {
+  background-image:
+    radial-gradient(rgba(255, 255, 255, .75) 2.4px, transparent 3px),
+    linear-gradient(180deg, rgba(252, 240, 236, .92), rgba(247, 235, 235, .86));
+  background-size: 28px 28px, auto;
+}
+.access-screen {
+  background-image:
+    radial-gradient(rgba(255, 253, 250, .8) 2.4px, transparent 3px),
+    linear-gradient(165deg, #efe0dd 0%, #f6e7e2 44%, #e9eef2 100%);
+  background-size: 30px 30px, auto;
+}
+
+/* ---------- 糖果条纹胶带(全部胶带升级为斜纹) ---------- */
+.tape {
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 252, 248, .5) 0 6px, rgba(255, 252, 248, 0) 6px 13px),
+    linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, 0) 38%),
+    linear-gradient(180deg, var(--tape-a, rgba(215, 140, 166, .6)), var(--tape-b, rgba(173, 86, 117, .48)));
+}
+
+/* ---------- 蕾丝扇贝边 ---------- */
+.lace-top { position: relative; }
+.lace-top::before {
+  position: absolute;
+  top: -6px;
+  left: 10px;
+  right: 10px;
+  z-index: 3;
+  height: 12px;
+  pointer-events: none;
+  content: '';
+  background: radial-gradient(circle at 9px 12px, var(--lace-color, #fffdfa) 8.5px, rgba(173, 86, 117, .22) 9px, transparent 9.8px);
+  background-size: 21px 12px;
+  background-repeat: repeat-x;
+}
+.sheet.lace-top::before { --lace-color: #fffdfa; }
+.welcome-band.lace-top::before { --lace-color: #fff8f3; }
+
+/* ---------- 钩花圆垫(照片卡/回忆卡底下) ---------- */
+.doily-host { position: relative; }
+.doily-host::after {
+  position: absolute;
+  z-index: -1;
+    inset: -13px -11px;
+  pointer-events: none;
+  content: '';
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%, transparent 0 44%, rgba(215, 140, 166, .2) 44% 45.5%, transparent 45.5% 52%, rgba(215, 140, 166, .13) 52% 53.5%, transparent 53.5% 60%, rgba(78, 135, 166, .12) 60% 61.2%, transparent 61.2% 68%);
+  opacity: .9;
+  transform: rotate(2deg);
+}
+.photo-hanging-card { z-index: 1; }
+
+/* ---------- 欢迎横幅:吊旗边饰 ---------- */
+.welcome-band::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 15px;
+  pointer-events: none;
+  content: '';
+  background:
+    conic-gradient(from 150deg at 50% 0%, rgba(215, 140, 166, .68) 0 60deg, transparent 60deg) 0 0 / 34px 15px repeat-x,
+    conic-gradient(from 150deg at 50% 0%, rgba(250, 244, 236, .95) 0 60deg, transparent 60deg) 17px 0 / 34px 15px repeat-x,
+    conic-gradient(from 150deg at 50% 0%, rgba(109, 158, 182, .62) 0 60deg, transparent 60deg) 34px 0 / 34px 15px repeat-x;
+  opacity: .75;
+}
+
+/* ---------- 奶油波浪分隔(区块标题上方) ---------- */
+.section-heading { position: relative; }
+.dashboard-stack > .section-heading::before,
+.view-stack > .section-heading::before {
+  position: absolute;
+  top: -16px;
+  left: 0;
+  right: 0;
+  height: 10px;
+  pointer-events: none;
+  content: '';
+  background: radial-gradient(circle at 10px -3px, rgba(255, 246, 232, .95) 11px, rgba(255, 246, 232, 0) 11.6px);
+  background-size: 24px 12px;
+  background-repeat: repeat-x;
+  opacity: .85;
+}
+
+/* ---------- 果冻感交互 ---------- */
+.button { border-radius: var(--r-pill); }
+.button-dark {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .32), rgba(255, 255, 255, 0) 58%), linear-gradient(150deg, var(--pink-deep), var(--pink));
+}
+.button-dark:hover { background-image: linear-gradient(180deg, rgba(255, 255, 255, .32), rgba(255, 255, 255, 0) 58%), linear-gradient(150deg, #9d4a68, var(--pink-deep)); }
+@keyframes jelly-wobble {
+  0% { transform: scale(1, 1); }
+  28% { transform: scale(.94, 1.06); }
+  52% { transform: scale(1.05, .95); }
+  76% { transform: scale(.985, 1.015); }
+  100% { transform: scale(1, 1); }
+}
+.button-dark:hover:not(:disabled), .check-button:hover, .postmark:hover { animation: jelly-wobble .55s ease; }
+.button:active:not(:disabled), .icon-button:active { animation: jelly-wobble .4s ease; }
+.task-row.done .check-button { background-image: linear-gradient(180deg, rgba(255, 255, 255, .35), rgba(255, 255, 255, 0) 60%); }
+
+/* ---------- 樱桃点缀 ---------- */
+.mobile-nav .nav-button { position: relative; }
+.mobile-nav .nav-button.active::after {
+  position: absolute;
+  top: 7px;
+  right: calc(50% - 16px);
+  width: 6px;
+  height: 6px;
+  content: '';
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 32%, #f2b7c9, var(--pink-deep));
+  box-shadow: 8px 3px 0 -1.2px var(--blue);
+  opacity: .9;
+}
+.task-row.done .task-content strong { text-decoration-color: var(--pink); }
+.task-row.done::after {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  content: '';
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 32%, #f2b7c9, var(--pink-deep));
+  box-shadow: 7px 2px 0 -1.2px var(--blue);
+  opacity: .55;
+}
+.task-row { position: relative; }
+
+/* ---------- 数字与标语字体(圆胖可爱) ---------- */
+.duration strong, .timeline-date strong, .big-countdown strong, .postmark-value, .queue-count, .compact-heading h3 span, .role-pair-letter, .role-avatar { font-family: var(--font-serif); }
+.task-board-head .postmark-value { font-family: var(--font-serif); font-size: 24px; }
+.welcome-illustration-caption, .empty-state span { font-family: var(--font-cute); letter-spacing: .04em; }
+.empty-state span { font-size: 12.5px; }
+
+/* ---------- 拍立得蕾丝化 ---------- */
+.polaroid { outline: 1.5px dashed rgba(160, 78, 107, .22); outline-offset: -7px; border-radius: 3px; }
+.polaroid-caption { font-size: 18px; }
+.photo-month-heading h2 { outline: 1.5px dashed rgba(160, 78, 107, .22); outline-offset: 3px; }
+
+/* ---------- 抽屉顶部蕾丝 ---------- */
+.sheet { border-top: 3px dotted rgba(215, 140, 166, .5); }
+
+/* ---------- 空状态/上传里的甜品贴纸 ---------- */
+.empty-state .material-sticker, .loading-sticker { width: 40px; height: 40px; flex: 0 0 auto; }
+.loading-panel .loading-sticker { display: block; width: 52px; height: 52px; margin-bottom: 20px; }
+.upload-progress { background: repeating-linear-gradient(45deg, var(--pink-soft) 0 8px, #fbeef3 8px 16px); }
+.upload-progress span { background-image: linear-gradient(90deg, var(--blue), var(--pink)); }
+
+/* ---------- 樱桃圆点光标跟随的小细节:logo 双色更高光 ---------- */
+.brand-mark { background: linear-gradient(135deg, var(--pink) 0 50%, var(--blue) 50% 100%); box-shadow: inset 0 0 0 2px rgba(255, 251, 246, .65), var(--shadow-blue-sm); }
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 980px) {

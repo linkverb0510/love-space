@@ -212,7 +212,7 @@ function AccessGate({ client, email, onEnter }: { client: NonNullable<ReturnType
 }
 
 function LoadingScreen({ text }: { text: string }) {
-  return <main className="access-screen"><section className="access-panel loading-panel"><div className="brand-lockup"><span className="brand-mark"><Heart size={17} fill="currentColor" /></span><span>our little space</span></div><div className="eyebrow">LOADING</div><h1>{text}</h1></section></main>;
+  return <main className="access-screen"><section className="access-panel loading-panel"><MaterialSticker asset={MATERIAL_ASSETS.custard} tone="blush" placement="loading" className="loading-sticker" /><div className="brand-lockup"><span className="brand-mark"><Heart size={17} fill="currentColor" /></span><span>our little space</span></div><div className="eyebrow">LOADING</div><h1>{text}</h1></section></main>;
 }
 
 function AccessError({ text }: { text: string }) {
@@ -649,7 +649,7 @@ function Dashboard({ data, activeRole, relationship, nextMilestone, recentEntry,
   const today = formatDate(getDateInTimezone(new Date(), timezone), { weekday: 'long', month: 'long', day: 'numeric' });
   const planSummary = (plan: PlanItem) => plan.location ?? plan.note ?? (plan.dueDate ? formatShortDate(plan.dueDate) : '还没有补充说明');
   return <div className="dashboard-stack">
-    <section className="welcome-band lolita-paper"><WashiTape tone="pink" to="left" /><WashiTape tone="blue" to="right" /><LolitaPaperDecor /><div className="welcome-copy"><span className="eyebrow">{today}</span><h1>你好，<em>你们。</em></h1><StitchLine className="welcome-stitch" /><p>今天也有一些小事，值得一起记住。</p><div className="active-role-note"><RoleBadge role={activeRole} prefix="现在由 " /><span>记录这一刻</span></div></div><div className="welcome-illustration"><MaterialSticker asset={MATERIAL_ASSETS.strawberry} tone="rose" placement="hero" size="lg" /><span className="welcome-illustration-caption">two people,<br />one timeline</span></div></section>
+    <section className="welcome-band lolita-paper lace-top"><WashiTape tone="pink" to="left" /><WashiTape tone="blue" to="right" /><LolitaPaperDecor /><div className="welcome-copy"><span className="eyebrow">{today}</span><h1>你好，<em>你们。</em></h1><StitchLine className="welcome-stitch" /><p>今天也有一些小事，值得一起记住。</p><div className="active-role-note"><RoleBadge role={activeRole} prefix="现在由 " /><span>记录这一刻</span></div></div><div className="welcome-illustration"><MaterialSticker asset={MATERIAL_ASSETS.cupcake} tone="rose" placement="hero" size="lg" /><span className="welcome-illustration-caption">two people,<br />one timeline</span></div></section>
     <RolePair />
      <section className="relationship-grid"><div className="relationship-panel">{relationship ? <><div className="panel-label">我们已经</div><TicketStub className="duration-ticket"><div className="duration"><strong>{relationship.years}</strong><span>年</span><strong>{relationship.months}</strong><span>个月</span><strong>{relationship.days}</strong><span>天</span></div></TicketStub><div className="duration-foot">共走过 {relationship.totalDays.toLocaleString()} 天 <span>·</span> 还会有更多</div><div className="relationship-line" /></> : <div className="relationship-empty"><div className="panel-label">OUR STARTING POINT</div><h3>还没有设置开始日</h3><p>填写后，这里会开始记录你们一起走过的时间。</p><button className="button button-light" onClick={onSetRelationshipStart} disabled={!canWrite}><CalendarDays size={16} />设置开始日</button></div>}</div><div className="anniversary-panel"><div className="panel-topline"><span className="tag tag-coral">UP NEXT</span>{nextMilestone && <button className="text-button" onClick={() => openView('timeline', nextMilestone.id)}>去时间线 <ArrowUpRight size={15} /></button>}</div><h3>{nextMilestone?.title ?? '添加一个重要日子'}</h3><p>{nextMilestone ? `${formatTimelineDate(nextMilestone, nextMilestone.nextOccurrence ?? nextMilestone.date)}${nextMilestone.location ? ` · ${nextMilestone.location}` : ''}` : '把下一个想庆祝的日子放进来。'}</p><div className="big-countdown">{nextMilestone ? <Postmark value={nextMilestone.countdownDays} label="天以后见" /> : <button className="button button-light" onClick={onAddMilestone} disabled={!canWrite}><Plus size={16} />添加日子</button>}</div></div></section>
     <div className="section-heading"><div><span className="eyebrow">THE STORY SO FAR</span><h2>最近发生的事</h2></div><button className="text-button" onClick={() => openView('timeline')}>查看时间线 <ArrowUpRight size={15} /></button></div>
@@ -700,7 +700,7 @@ function PhotosView({ photos, uploads, timeline, readOnly, disabled, onUpload, o
   const groups = groupPhotosByDate(photos);
   return <div className="view-stack">
     <ViewIntro eyebrow="THE LITTLE DETAILS" title="照片" description={`${photos.length} 张照片，把普通日子串成一面墙。`} action={!readOnly && <label className="button button-dark"><Upload size={17} />选择照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={onUpload} disabled={disabled} /></label>} />
-    {groups.length > 0 ? <div className="photo-timeline" aria-label="照片时间线">{groups.map((month) => <section className="photo-month" key={month.month} aria-labelledby={`photo-month-${month.month}`}><div className="photo-month-heading"><span className="photo-month-knot" aria-hidden="true" /><h2 id={`photo-month-${month.month}`}>{formatMonthLabel(month.month)}</h2><FilmStripDivider className="month-strip" /></div>{month.days.map((day) => <section className="photo-day" key={day.date} aria-labelledby={`photo-day-${day.date}`}><div className="photo-day-heading"><time id={`photo-day-${day.date}`} dateTime={day.date}>{formatPhotoDay(day.date)}</time><span>{day.photos.length} 张照片</span></div><div className="photo-rope-row">{day.photos.map((photo, index) => <PhotoCard key={photo.id} photo={photo} index={index} timeline={timeline} onOpen={onOpen} onOpenTimeline={onOpenTimeline} getAsset={getAsset} />)}</div></section>)}</section>)}</div> : <EmptyState text={readOnly ? '公开预览暂无照片。' : '还没有照片，选几张你们的日常吧。'} />}
+    {groups.length > 0 ? <div className="photo-timeline" aria-label="照片时间线">{groups.map((month) => <section className="photo-month" key={month.month} aria-labelledby={`photo-month-${month.month}`}><div className="photo-month-heading"><span className="photo-month-knot" aria-hidden="true" /><h2 id={`photo-month-${month.month}`}>{formatMonthLabel(month.month)}</h2><FilmStripDivider className="month-strip" /></div>{month.days.map((day) => <section className="photo-day" key={day.date} aria-labelledby={`photo-day-${day.date}`}><div className="photo-day-heading"><time id={`photo-day-${day.date}`} dateTime={day.date}>{formatPhotoDay(day.date)}</time><span>{day.photos.length} 张照片</span></div><div className="photo-rope-row">{day.photos.map((photo, index) => <PhotoCard key={photo.id} photo={photo} index={index} timeline={timeline} onOpen={onOpen} onOpenTimeline={onOpenTimeline} getAsset={getAsset} />)}</div></section>)}</section>)}</div> : <EmptyState text={readOnly ? '公开预览暂无照片。' : '还没有照片，选几张你们的日常吧。'} sticker="doughnut" />}
     {uploads.length > 0 && <UploadQueue uploads={uploads} onClear={onClearUpload} onRetry={onRetry} />}
     {photos.length > 0 && <p className="view-note"><Camera size={16} /> 原图保留，照片墙按屏幕尺寸加载展示版。</p>}
   </div>;
@@ -723,7 +723,7 @@ function PhotoCard({ photo, index, timeline, onOpen, onOpenTimeline, getAsset }:
   }
 
   return <motion.article
-    className={`photo-hanging-card ${index % 2 === 0 ? 'hang-left' : 'hang-right'} ${photo.mediaKind === 'live' ? 'is-live' : ''}`}
+    className={`photo-hanging-card doily-host ${index % 2 === 0 ? 'hang-left' : 'hang-right'} ${photo.mediaKind === 'live' ? 'is-live' : ''}`}
     style={{ '--photo-ratio': photoAspectRatio(photo) } as CSSProperties}
     initial={{ opacity: 0, y: 26, rotate: restingRotation * 2.4 }}
     whileInView={{ opacity: 1, y: 0, rotate: restingRotation }}
@@ -910,7 +910,7 @@ function Sheet({ title, eyebrow, children, onClose }: { title: string; eyebrow: 
     };
   }, [onClose]);
 
-  return <motion.div className="sheet-backdrop" role="presentation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><motion.section ref={dialogRef} className="sheet" role="dialog" aria-modal="true" aria-label={title} initial={{ opacity: 0, y: 46, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 30, scale: .98 }} transition={{ type: 'spring', stiffness: 340, damping: 30 }}><div className="sheet-handle" aria-hidden="true" /><div className="modal-head"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div><button className="icon-button" title="关闭" aria-label="关闭" onClick={onClose}><X size={19} /></button></div>{children}</motion.section></motion.div>;
+  return <motion.div className="sheet-backdrop" role="presentation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><motion.section ref={dialogRef} className="sheet lace-top" role="dialog" aria-modal="true" aria-label={title} initial={{ opacity: 0, y: 46, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 30, scale: .98 }} transition={{ type: 'spring', stiffness: 340, damping: 30 }}><div className="sheet-handle" aria-hidden="true" /><div className="modal-head"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div><button className="icon-button" title="关闭" aria-label="关闭" onClick={onClose}><X size={19} /></button></div>{children}</motion.section></motion.div>;
 }
 
 function FormActions({ onClose, submitLabel }: { onClose: () => void; submitLabel: string }) {
@@ -921,8 +921,9 @@ function ViewIntro({ eyebrow, title, description, action }: { eyebrow: string; t
   return <section className="view-intro"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action && <div className="view-intro-action">{action}</div>}</section>;
 }
 
-function EmptyState({ text }: { text: string }) {
-  return <div className="empty-state"><Sparkles size={18} /><span>{text}</span></div>;
+function EmptyState({ text, sticker = 'iceCream' }: { text: string; sticker?: 'iceCream' | 'doughnut' | 'candy' }) {
+  const asset = sticker === 'doughnut' ? MATERIAL_ASSETS.doughnut : sticker === 'candy' ? MATERIAL_ASSETS.candy : MATERIAL_ASSETS.iceCream;
+  return <div className="empty-state"><MaterialSticker asset={asset} tone="blush" placement="empty" size="sm" /><span>{text}</span></div>;
 }
 
 export default App;

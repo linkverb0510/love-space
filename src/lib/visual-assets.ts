@@ -122,29 +122,125 @@ export const MATERIAL_ASSETS = {
       sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f339.svg',
       modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
     }
+  },
+  cupcake: {
+    src: getPublicAssetPath('assets/stickers/cupcake.svg'),
+    kind: 'sticker',
+    tone: 'rose',
+    alt: '纸杯蛋糕贴纸',
+    attribution: {
+      creator: 'Twitter, Inc. and other contributors',
+      license: 'CC-BY-4.0',
+      sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f9c1.svg',
+      modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
+    }
+  },
+  iceCream: {
+    src: getPublicAssetPath('assets/stickers/ice-cream.svg'),
+    kind: 'sticker',
+    tone: 'blush',
+    alt: '冰淇淋贴纸',
+    attribution: {
+      creator: 'Twitter, Inc. and other contributors',
+      license: 'CC-BY-4.0',
+      sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f366.svg',
+      modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
+    }
+  },
+  doughnut: {
+    src: getPublicAssetPath('assets/stickers/doughnut.svg'),
+    kind: 'sticker',
+    tone: 'rose',
+    alt: '甜甜圈贴纸',
+    attribution: {
+      creator: 'Twitter, Inc. and other contributors',
+      license: 'CC-BY-4.0',
+      sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f369.svg',
+      modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
+    }
+  },
+  candy: {
+    src: getPublicAssetPath('assets/stickers/candy.svg'),
+    kind: 'sticker',
+    tone: 'berry',
+    alt: '糖果贴纸',
+    attribution: {
+      creator: 'Twitter, Inc. and other contributors',
+      license: 'CC-BY-4.0',
+      sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f36c.svg',
+      modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
+    }
+  },
+  lollipop: {
+    src: getPublicAssetPath('assets/stickers/lollipop.svg'),
+    kind: 'sticker',
+    tone: 'berry',
+    alt: '棒棒糖贴纸',
+    attribution: {
+      creator: 'Twitter, Inc. and other contributors',
+      license: 'CC-BY-4.0',
+      sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f36d.svg',
+      modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
+    }
+  },
+  custard: {
+    src: getPublicAssetPath('assets/stickers/custard.svg'),
+    kind: 'sticker',
+    tone: 'blush',
+    alt: '焦糖布丁贴纸',
+    attribution: {
+      creator: 'Twitter, Inc. and other contributors',
+      license: 'CC-BY-4.0',
+      sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f36e.svg',
+      modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
+    }
+  },
+  bento: {
+    src: getPublicAssetPath('assets/stickers/bento.svg'),
+    kind: 'sticker',
+    tone: 'neutral',
+    alt: '便当贴纸',
+    attribution: {
+      creator: 'Twitter, Inc. and other contributors',
+      license: 'CC-BY-4.0',
+      sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f371.svg',
+      modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
+    }
+  },
+  birthdayCake: {
+    src: getPublicAssetPath('assets/stickers/birthday-cake.svg'),
+    kind: 'sticker',
+    tone: 'rose',
+    alt: '切块蛋糕贴纸',
+    attribution: {
+      creator: 'Twitter, Inc. and other contributors',
+      license: 'CC-BY-4.0',
+      sourceUrl: 'https://github.com/jdecked/twemoji/blob/main/assets/svg/1f382.svg',
+      modification: '未修改图稿；页面仅以 CSS 添加白色 die-cut 边和投影。'
+    }
   }
 } satisfies Record<string, MaterialAsset>;
 
 const surfaceDecorations: Record<VisualSurface, Record<VisualViewport, readonly MaterialAsset[]>> = {
   home: {
-    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.strawberry, MATERIAL_ASSETS.ribbon, MATERIAL_ASSETS.roseBouquet, MATERIAL_ASSETS.rose],
-    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.strawberry]
+    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.cupcake, MATERIAL_ASSETS.iceCream, MATERIAL_ASSETS.strawberry, MATERIAL_ASSETS.ribbon],
+    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.cupcake]
   },
   timeline: {
-    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.cherries, MATERIAL_ASSETS.ribbon, MATERIAL_ASSETS.rose],
-    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.cherries]
+    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.custard, MATERIAL_ASSETS.lollipop, MATERIAL_ASSETS.cherries, MATERIAL_ASSETS.rose],
+    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.custard]
   },
   photos: {
-    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.shortcake, MATERIAL_ASSETS.ribbon, MATERIAL_ASSETS.roseBouquet],
-    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.shortcake]
+    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.birthdayCake, MATERIAL_ASSETS.doughnut, MATERIAL_ASSETS.shortcake],
+    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.birthdayCake]
   },
   plans: {
-    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.ribbon],
-    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.ribbon]
+    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.bento, MATERIAL_ASSETS.candy],
+    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.candy]
   },
   settings: {
-    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.strawberryDrink],
-    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.strawberryDrink]
+    desktop: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.iceCream, MATERIAL_ASSETS.strawberryDrink],
+    mobile: [MATERIAL_ASSETS.cottonLining, MATERIAL_ASSETS.iceCream]
   }
 };
 

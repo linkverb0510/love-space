@@ -31,3 +31,7 @@ The files above are by Twitter, Inc. and other contributors, sourced from [jdeck
 ## Character Stickers
 
 The `characters` directory remains intentionally empty until the couple approves character assets. No private reference photo is stored in this repository.
+
+## Couple Mascots
+
+- `brand/mascot-l.svg`, `brand/mascot-w.svg` - original hand-drawn Q-version mascots of the couple, drawn in-repository from their reference photo. No photographic likeness is shipped; the reference photo itself lives outside version control (`local-assets/` is git-ignored). Released under **CC0 1.0** by the site owners.

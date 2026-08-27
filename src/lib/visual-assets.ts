@@ -253,3 +253,36 @@ export function getRoleAccent(role: ActiveRole): RoleAccent {
     ? { main: '#5E9EBD', detail: '#365F76' }
     : { main: '#D88EA5', detail: '#923D5A' };
 }
+
+/**
+ * 双人 Q 版吉祥物(原创手绘,非照片,可公开)。
+ * SVG 文件就位前,组件按 onError 自行回退到字母徽章。
+ */
+export const MASCOT_ASSETS = {
+  l: {
+    src: getPublicAssetPath('assets/brand/mascot-l.svg'),
+    kind: 'character',
+    tone: 'neutral',
+    alt: 'L 的 Q 版形象',
+    attribution: {
+      creator: 'our little space',
+      license: 'CC0-1.0',
+      sourceUrl: 'https://github.com/linkverb0510/love-space',
+      modification: '原创手绘 Q 版形象。'
+    }
+  },
+  w: {
+    src: getPublicAssetPath('assets/brand/mascot-w.svg'),
+    kind: 'character',
+    tone: 'neutral',
+    alt: 'W 的 Q 版形象',
+    attribution: {
+      creator: 'our little space',
+      license: 'CC0-1.0',
+      sourceUrl: 'https://github.com/linkverb0510/love-space',
+      modification: '原创手绘 Q 版形象。'
+    }
+  }
+} satisfies Record<string, MaterialAsset>;
+
+export type MascotKey = keyof typeof MASCOT_ASSETS;

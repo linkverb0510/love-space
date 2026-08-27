@@ -1110,3 +1110,30 @@ body {
 @media (min-width: 701px) {
   .notebook-bow { display: block; }
 }
+
+/* ============================================================
+   couple portraits · 吉祥物与真人头像兜底链
+   ============================================================ */
+.mascot-duo { display: grid; place-items: center; }
+.mascot-duo .mascot-heart { color: var(--pink-deep); }
+.mascot-duo img {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2.5px solid #fffdfa;
+  background: var(--paper);
+  box-shadow: 2px 3px 0 rgba(173, 86, 117, .18);
+  object-fit: cover;
+}
+.mascot-duo img + img { margin-left: -12px; transform: rotate(6deg); }
+.mascot-duo img:first-child { transform: rotate(-6deg); }
+.access-seal .mascot-duo img { width: 54px; height: 54px; }
+.mascot-duo-compact img { width: 38px; height: 38px; }
+.loading-panel .mascot-duo { margin-bottom: 20px; justify-items: start; }
+
+.portrait-img { display: block; border-radius: 50%; object-fit: cover; }
+.avatar-button .portrait-img { width: 24px; height: 24px; box-shadow: 0 0 0 2px rgba(255, 251, 246, .7); }
+.role-pair-stamp .portrait-img { width: 32px; height: 32px; border: 2px solid #fffdfa; background: var(--paper); box-shadow: 1px 2px 0 rgba(173, 86, 117, .14); }
+.role-pair-stamp .role-avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fff; font-family: var(--font-serif); font-size: 15px; }
+.role-pair-stamp .role-avatar.role-l { background: var(--role-l); }
+.role-pair-stamp .role-avatar.role-w { background: var(--role-w); }

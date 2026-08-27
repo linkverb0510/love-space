@@ -12,3 +12,4 @@ tmp/
 tmp_*
 Program
 .zcode/
+local-assets/

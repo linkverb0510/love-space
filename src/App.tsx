@@ -42,8 +42,9 @@ import { createSupabaseClient } from './lib/supabase';
 import { isPrivateSpaceEntry } from './lib/runtime-path';
 import { getActiveRole, getRoleLabel, saveActiveRole, type ActiveRole } from './lib/roles';
 import { getPublicAssetPath } from './lib/public-asset-path';
+import { fetchAvatarUrls, type AvatarUrls } from './lib/avatars';
 import { LolitaPageDecor, LolitaPaperDecor, MaterialSticker } from './components/LolitaDecor';
-import { MATERIAL_ASSETS } from './lib/visual-assets';
+import { MASCOT_ASSETS, MATERIAL_ASSETS } from './lib/visual-assets';
 import { FilmStripDivider, PolaroidFrame, Postmark, StampFrame, StickyNote, StitchLine, TicketStub, WashiTape } from './components/scrapbook';
 import { itemFallIntoPlace, springSnappy, stackStagger, viewFadeRise } from './lib/motion-presets';
 import {
@@ -181,7 +182,7 @@ function AccessGate({ client, email, onEnter }: { client: NonNullable<ReturnType
             <WashiTape tone="pink" to="left" />
             <WashiTape tone="blue" to="right" />
             <StampFrame className="access-seal">
-              <span className="access-heart"><Heart size={46} fill="currentColor" strokeWidth={1.2} /></span>
+              <MascotDuo />
             </StampFrame>
             <div className="access-doodles">
               <MaterialSticker asset={MATERIAL_ASSETS.ribbon} placement="doodle-a" tone="rose" size="sm" />
@@ -212,7 +213,45 @@ function AccessGate({ client, email, onEnter }: { client: NonNullable<ReturnType
 }
 
 function LoadingScreen({ text }: { text: string }) {
-  return <main className="access-screen"><section className="access-panel loading-panel"><MaterialSticker asset={MATERIAL_ASSETS.custard} tone="blush" placement="loading" className="loading-sticker" /><div className="brand-lockup"><span className="brand-mark"><Heart size={17} fill="currentColor" /></span><span>our little space</span></div><div className="eyebrow">LOADING</div><h1>{text}</h1></section></main>;
+  return <main className="access-screen"><section className="access-panel loading-panel"><MascotDuo compact /><div className="brand-lockup"><span className="brand-mark"><Heart size={17} fill="currentColor" /></span><span>our little space</span></div><div className="eyebrow">LOADING</div><h1>{text}</h1></section></main>;
+}
+
+/** 双人吉祥物:SVG 预加载成功才显示,否则回退到爱心(避免破图)。 */
+function MascotDuo({ compact = false }: { compact?: boolean }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const images = [MASCOT_ASSETS.l.src, MASCOT_ASSETS.w.src].map((src) => new Image());
+    Promise.all(images.map((image) => new Promise<boolean>((resolve) => {
+      image.onload = () => resolve(true);
+      image.onerror = () => resolve(false);
+    }))).then((results) => {
+      if (!cancelled) setReady(results.every(Boolean));
+    });
+    return () => { cancelled = true; };
+  }, []);
+  return (
+    <span className={`mascot-duo ${compact ? 'mascot-duo-compact' : ''}`} data-ready={ready} aria-hidden="true">
+      {ready ? (
+        <>
+          <img src={MASCOT_ASSETS.l.src} alt="" />
+          <img src={MASCOT_ASSETS.w.src} alt="" />
+        </>
+      ) : (
+        <span className="access-heart mascot-heart"><Heart size={compact ? 30 : 46} fill="currentColor" strokeWidth={1.2} /></span>
+      )}
+    </span>
+  );
+}
+
+/** 角色形象兜底链:真人头像 → 吉祥物 → 字母徽章。 */
+function RolePortrait({ role, urls }: { role: SpaceRole; urls: AvatarUrls }) {
+  const [mascotFailed, setMascotFailed] = useState(false);
+  const url = role === 'l' ? urls.l : role === 'w' ? urls.w : undefined;
+  const mascot = role === 'l' || role === 'w' ? MASCOT_ASSETS[role] : undefined;
+  if (url) return <img className="portrait-img" src={url} alt={getRoleLabel(role)} />;
+  if (mascot && !mascotFailed) return <img className="portrait-img portrait-mascot" src={mascot.src} alt="" aria-hidden="true" onError={() => setMascotFailed(true)} />;
+  return <span className={`role-avatar role-${role}`}>{getRoleLabel(role)}</span>;
 }
 
 function AccessError({ text }: { text: string }) {
@@ -254,6 +293,16 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [activeRole, setActiveRole] = useState<ActiveRole>(() => getActiveRole(config.spacePath));
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(remoteMode ? 'loading' : 'clean');
+  const avatarClient = useMemo(() => remoteMode ? createSupabaseClient(config) : null, [remoteMode, config]);
+  const [avatarUrls, setAvatarUrls] = useState<AvatarUrls>({});
+  useEffect(() => {
+    if (!avatarClient) return;
+    let cancelled = false;
+    fetchAvatarUrls(avatarClient, config.spacePath).then((urls) => {
+      if (!cancelled) setAvatarUrls(urls);
+    }).catch(() => { /* 头像未上传或网络失败:回退到吉祥物/字母 */ });
+    return () => { cancelled = true; };
+  }, [avatarClient, config.spacePath]);
   const activeSheet = useRef<SheetState>(null);
   const pendingUploads = useRef<UploadItem[]>([]);
   const activeUploadCount = useRef(0);
@@ -598,13 +647,13 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
          <div className="sidebar-bottom">{!readOnly && <button className="quiet-button" onClick={onLock}><LockKeyhole size={17} />锁定空间</button>}</div>
       </aside>
       <main className="main-content">
-         <header className="topbar"><div><span className="mobile-kicker">OUR LITTLE SPACE</span><h2>{pageTitle}</h2></div><div className="topbar-actions"><SyncStatusBadge status={readOnly ? 'clean' : syncStatus} remoteMode={remoteMode} readOnly={readOnly} /><button className={`avatar-button role-${activeRole}`} title={`当前身份 ${getRoleLabel(activeRole)}，打开设置`} aria-label={`当前身份 ${getRoleLabel(activeRole)}，打开设置`} onClick={() => setView('settings')}><span className={`role-avatar role-${activeRole}`}>{getRoleLabel(activeRole)}</span><span>+</span></button></div></header>
+         <header className="topbar"><div><span className="mobile-kicker">OUR LITTLE SPACE</span><h2>{pageTitle}</h2></div><div className="topbar-actions"><SyncStatusBadge status={readOnly ? 'clean' : syncStatus} remoteMode={remoteMode} readOnly={readOnly} /><button className={`avatar-button role-${activeRole}`} title={`当前身份 ${getRoleLabel(activeRole)}，打开设置`} aria-label={`当前身份 ${getRoleLabel(activeRole)}，打开设置`} onClick={() => setView('settings')}><RolePortrait role={activeRole} urls={avatarUrls} /><span>+</span></button></div></header>
          {!readOnly && syncStatus !== 'clean' && <div className={`sync-banner sync-banner-${syncStatus}`} role={syncStatus === 'error' || syncStatus === 'conflict' ? 'alert' : 'status'}><span className="status-dot" /><span>{syncStatus === 'loading' ? '共享内容加载中，暂时不能编辑。' : syncStatus === 'saving' ? '正在保存最新修改…' : syncStatus === 'conflict' ? '内容已被另一台设备修改，请刷新后重试。' : '同步失败，请检查网络后重试。'}</span></div>}
          <div className="page-content">
            <LolitaPageDecor surface={lolitaSurface} />
            <AnimatePresence mode="wait" initial={false}>
              <motion.div key={view} {...viewFadeRise}>
-              {view === 'home' && <Dashboard data={data} activeRole={activeRole} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} timezone={data.timezone} readOnly={readOnly} canWrite={editingReady} openView={openView} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onAddPlan={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onSetRelationshipStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onTogglePlan={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} />}
+              {view === 'home' && <Dashboard data={data} activeRole={activeRole} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} timezone={data.timezone} readOnly={readOnly} canWrite={editingReady} avatars={avatarUrls} openView={openView} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onAddPlan={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onSetRelationshipStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onTogglePlan={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} />}
               {view === 'timeline' && <TimelineView entries={timeline} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onOpen={(entry) => setSheet({ type: 'timeline-detail', entry })} onEdit={(entry) => setSheet(entry.type === 'memory' ? { type: 'memory-form', entry } : { type: 'milestone-form', entry })} onDelete={(entry) => void deleteTimelineEntry(entry)} />}
               {view === 'photos' && <PhotosView photos={data.photos} uploads={uploads} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onUpload={addPhotos} onOpen={(photo) => setSheet({ type: 'photo-detail', photo })} onOpenTimeline={(entryId) => openView('timeline', entryId)} onClearUpload={(id) => setUploads((current) => current.filter((item) => item.id !== id))} onRetry={retryUpload} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} />}
               {view === 'plans' && <PlansView plans={data.plans} readOnly={readOnly} disabled={!editingReady} onAdd={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onEdit={(plan) => setSheet({ type: 'plan-form', plan })} onDelete={(plan) => void deletePlan(plan)} onToggle={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} onWriteMemory={(plan) => { if (editingReady) setSheet({ type: 'memory-form', draft: { ...createMemoryDraftFromPlan(plan, todayString(data.timezone)), createdByRole: activeRole } }); else canWrite(); }} />}
@@ -641,17 +690,17 @@ function RolePicker({ value, onChange, label = '添加者', includeBoth = true, 
   return <div className="role-picker" role="group" aria-label={label}><span className="label-hint">{label}</span><div className="role-picker-options">{options.map((role) => <button key={role} type="button" className={value === role ? 'selected' : ''} data-role={role} aria-pressed={value === role} onClick={() => onChange(role)}><span className="role-picker-dot" aria-hidden="true" />{getRoleLabel(role)}</button>)}</div></div>;
 }
 
-function RolePair() {
-  return <div className="role-pair" aria-label="两个人的角色"><div className="role-pair-card" data-role="l"><StampFrame className="role-pair-stamp"><span className="role-pair-letter">L</span></StampFrame><span><strong>海蓝色的 L</strong><small>留住细节的人</small></span></div><div className="role-pair-card" data-role="w"><StampFrame className="role-pair-stamp"><span className="role-pair-letter">W</span></StampFrame><span><strong>粉色的 W</strong><small>让日子变甜的人</small></span></div></div>;
+function RolePair({ avatars = {} }: { avatars?: AvatarUrls }) {
+  return <div className="role-pair" aria-label="两个人的角色"><div className="role-pair-card" data-role="l"><StampFrame className="role-pair-stamp"><RolePortrait role="l" urls={avatars} /></StampFrame><span><strong>海蓝色的 L</strong><small>留住细节的人</small></span></div><div className="role-pair-card" data-role="w"><StampFrame className="role-pair-stamp"><RolePortrait role="w" urls={avatars} /></StampFrame><span><strong>粉色的 W</strong><small>让日子变甜的人</small></span></div></div>;
 }
 
-function Dashboard({ data, activeRole, relationship, nextMilestone, recentEntry, recentPhoto, timezone, readOnly, canWrite, openView, onAddMemory, onAddMilestone, onAddPlan, onSetRelationshipStart, onTogglePlan }: { data: SpaceData; activeRole: ActiveRole; relationship: ReturnType<typeof getRelationshipDuration>; nextMilestone?: TimelineDisplayEntry; recentEntry?: TimelineDisplayEntry; recentPhoto?: Photo; timezone: string; readOnly: boolean; canWrite: boolean; openView: (view: ViewKey, id?: string) => void; onAddMemory: () => void; onAddMilestone: () => void; onAddPlan: () => void; onSetRelationshipStart: () => void; onTogglePlan: (plan: PlanItem) => void }) {
+function Dashboard({ data, activeRole, relationship, nextMilestone, recentEntry, recentPhoto, timezone, readOnly, canWrite, avatars, openView, onAddMemory, onAddMilestone, onAddPlan, onSetRelationshipStart, onTogglePlan }: { data: SpaceData; activeRole: ActiveRole; relationship: ReturnType<typeof getRelationshipDuration>; nextMilestone?: TimelineDisplayEntry; recentEntry?: TimelineDisplayEntry; recentPhoto?: Photo; timezone: string; readOnly: boolean; canWrite: boolean; avatars: AvatarUrls; openView: (view: ViewKey, id?: string) => void; onAddMemory: () => void; onAddMilestone: () => void; onAddPlan: () => void; onSetRelationshipStart: () => void; onTogglePlan: (plan: PlanItem) => void }) {
   const openPlans = data.plans.filter((plan) => plan.status !== '已完成' && plan.status !== '搁置');
   const today = formatDate(getDateInTimezone(new Date(), timezone), { weekday: 'long', month: 'long', day: 'numeric' });
   const planSummary = (plan: PlanItem) => plan.location ?? plan.note ?? (plan.dueDate ? formatShortDate(plan.dueDate) : '还没有补充说明');
   return <div className="dashboard-stack">
     <section className="welcome-band lolita-paper lace-top"><WashiTape tone="pink" to="left" /><WashiTape tone="blue" to="right" /><LolitaPaperDecor /><div className="welcome-copy"><span className="eyebrow">{today}</span><h1>你好，<em>你们。</em></h1><StitchLine className="welcome-stitch" /><p>今天也有一些小事，值得一起记住。</p><div className="active-role-note"><RoleBadge role={activeRole} prefix="现在由 " /><span>记录这一刻</span></div></div><div className="welcome-illustration"><MaterialSticker asset={MATERIAL_ASSETS.cupcake} tone="rose" placement="hero" size="lg" /><span className="welcome-illustration-caption">two people,<br />one timeline</span></div></section>
-    <RolePair />
+    <RolePair avatars={avatars} />
      <section className="relationship-grid"><div className="relationship-panel">{relationship ? <><div className="panel-label">我们已经</div><TicketStub className="duration-ticket"><div className="duration"><strong>{relationship.years}</strong><span>年</span><strong>{relationship.months}</strong><span>个月</span><strong>{relationship.days}</strong><span>天</span></div></TicketStub><div className="duration-foot">共走过 {relationship.totalDays.toLocaleString()} 天 <span>·</span> 还会有更多</div><div className="relationship-line" /></> : <div className="relationship-empty"><div className="panel-label">OUR STARTING POINT</div><h3>还没有设置开始日</h3><p>填写后，这里会开始记录你们一起走过的时间。</p><button className="button button-light" onClick={onSetRelationshipStart} disabled={!canWrite}><CalendarDays size={16} />设置开始日</button></div>}</div><div className="anniversary-panel"><div className="panel-topline"><span className="tag tag-coral">UP NEXT</span>{nextMilestone && <button className="text-button" onClick={() => openView('timeline', nextMilestone.id)}>去时间线 <ArrowUpRight size={15} /></button>}</div><h3>{nextMilestone?.title ?? '添加一个重要日子'}</h3><p>{nextMilestone ? `${formatTimelineDate(nextMilestone, nextMilestone.nextOccurrence ?? nextMilestone.date)}${nextMilestone.location ? ` · ${nextMilestone.location}` : ''}` : '把下一个想庆祝的日子放进来。'}</p><div className="big-countdown">{nextMilestone ? <Postmark value={nextMilestone.countdownDays} label="天以后见" /> : <button className="button button-light" onClick={onAddMilestone} disabled={!canWrite}><Plus size={16} />添加日子</button>}</div></div></section>
     <div className="section-heading"><div><span className="eyebrow">THE STORY SO FAR</span><h2>最近发生的事</h2></div><button className="text-button" onClick={() => openView('timeline')}>查看时间线 <ArrowUpRight size={15} /></button></div>
      <section className="home-grid"><article className="memory-feature"><WashiTape tone="blue" to="right" className="tape-corner-a" /><div className="feature-image" style={{ backgroundImage: recentPhoto ? `url(${recentPhoto.src})` : undefined }}><span className="image-caption">{recentPhoto?.caption ?? '还没有照片'}</span></div><div className="feature-copy"><div className="item-meta"><span>{recentEntry ? formatDate(recentEntry.date, { year: 'numeric', month: 'short', day: 'numeric' }) : '还没有回忆'}</span><span>{recentEntry?.location}</span></div><h3>{recentEntry?.title ?? '记录你们的第一条回忆'}</h3><p>{recentEntry?.type === 'memory' ? recentEntry.body : recentEntry?.note ?? '从一句话开始，把重要的瞬间留在这里。'}</p><div className="action-group"><button className="button button-outline" onClick={onAddMemory} disabled={!canWrite}><Plus size={16} />记录一件事</button>{recentEntry && <button className="text-button" onClick={() => openView('timeline', recentEntry.id)}>查看详情 <ArrowUpRight size={15} /></button>}</div></div></article><aside className="home-side-column"><div className="mini-section"><div className="section-heading compact-heading"><h3>接下来一起做 <span>{openPlans.length}</span></h3><button className="icon-button small" title="添加计划" aria-label="添加计划" onClick={onAddPlan} disabled={!canWrite}><Plus size={16} /></button></div>{openPlans.slice(0, 3).map((plan) => <PlanRow key={plan.id} plan={plan} onToggle={onTogglePlan} disabled={!canWrite} />)}{openPlans.length === 0 && <EmptyState text="还没有待完成的计划。" />}</div><StickyNote className="mini-section quote-section"><Sparkles size={17} /><p>把小事也认真记下来。</p><span>— 留给未来的你们</span></StickyNote></aside></section>

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Ma+Shan+Zheng&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&family=Special+Elite&family=ZCOOL+KuaiLe&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&family=Quicksand:wght@500;600;700&family=ZCOOL+KuaiLe&display=swap');
 
 /* ============================================================
    OUR LITTLE SPACE · retro film scrapbook system
@@ -68,11 +68,11 @@
   --z-grain: 100;
 
   /* type */
-  --font-body: 'DM Sans', 'Noto Sans SC', system-ui, sans-serif;
-  --font-hand: 'Ma Shan Zheng', 'Kaiti SC', 'STKaiti', KaiTi, 'DM Sans', serif;
-  --font-type: 'Special Elite', 'DM Mono', ui-monospace, monospace;
-  --font-serif: 'Baloo 2', 'Ma Shan Zheng', Georgia, serif;
-  --font-cute: 'ZCOOL KuaiLe', 'Ma Shan Zheng', 'Kaiti SC', KaiTi, sans-serif;
+  --font-body: 'Quicksand', 'DM Sans', 'Noto Sans SC', system-ui, sans-serif;
+  --font-hand: 'ZCOOL KuaiLe', 'Baloo 2', 'Noto Sans SC', sans-serif;
+  --font-type: 'Baloo 2', 'Quicksand', 'Noto Sans SC', sans-serif;
+  --font-serif: 'Baloo 2', 'ZCOOL KuaiLe', Georgia, serif;
+  --font-cute: 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
   --vanilla: #fff6e8;
   --caramel: #c98d5e;
   --cotton-candy: #fbdce8;
@@ -120,10 +120,11 @@ h1 em, h2 em, h3 em { font-style: normal; color: var(--pink-deep); }
 h1, .view-intro h1, .welcome-band h1, .access-panel h1 { font-family: var(--font-hand); font-weight: 400; }
 .section-heading h2, .task-board-head h2, .compact-heading h3, .modal-head h2, .detail-title, .timeline-empty h3, .relationship-empty h3, .memory-entry h3, .plan-preview h3, .feature-copy h3, .settings-danger h3, .anniversary-panel h3, .photo-month-heading h2, .space-card strong { font-family: var(--font-hand); font-weight: 400; letter-spacing: .01em; }
 
-/* 打字机元数据(代替旧 DM Mono 全大写风格,保留大小写更有票据味) */
+/* 元数据标签:圆润数字体加宽字距(替代旧打字机体) */
 .eyebrow, .mobile-kicker, .panel-label, .space-card-top, .duration-foot, .tag, .status-label, .view-note, .access-footnote, .sync-status, .queue-count, .item-meta, .photo-day-heading, .timeline-date span, .welcome-illustration-caption, .quote-section span, .task-divider {
   font-family: var(--font-type);
-  letter-spacing: .03em;
+  font-weight: 600;
+  letter-spacing: .06em;
 }
 
 .eyebrow { display: block; margin-bottom: 2px; color: var(--muted); font-size: 10px; line-height: 1.5; }
@@ -929,4 +930,182 @@ body {
   .material-desktop-only { display: none; }
   .lolita-page-decor > .material-sticker-paper { inset: -24px 0 auto; height: 350px; opacity: .07; }
   .lolita-page-decor-timeline > .material-sticker-sticker[data-placement='top-right'], .lolita-page-decor-photos > .material-sticker-sticker[data-placement='top-right'] { top: 7px; right: 14px; width: 42px; height: 42px; }
+}
+
+/* ============================================================
+   notebook shell · 活页手帐本桌面外壳(≥701px)
+   整个应用成为一本摊开的手帐:封面、活页环、索引凸舌、纸张页。
+   ≤700px 移动端布局完全不受此层影响。
+   ============================================================ */
+@media (min-width: 701px) {
+
+  /* 桌面上摊开的本子:四周露出波点桌面 */
+  body { padding: clamp(18px, 3vh, 34px) clamp(14px, 2.6vw, 40px); }
+  .app-shell {
+    position: relative;
+    max-width: 1440px;
+    margin: 0 auto;
+    border-radius: 26px;
+    background: linear-gradient(165deg, #fdf3ec 0%, #fbeceb 55%, #f3f0f4 100%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .8) inset,
+      0 26px 60px rgba(93, 60, 74, .22),
+      0 4px 0 rgba(173, 86, 117, .1),
+      0 0 0 1px #f2dfdd;
+  }
+  /* 封面顶边蕾丝扇贝 */
+  .app-shell::before {
+    position: absolute;
+    top: -1px;
+    left: 24px;
+    right: 24px;
+    z-index: 6;
+    height: 12px;
+    pointer-events: none;
+    content: '';
+    background: radial-gradient(circle at 10px 1px, rgba(255, 253, 248, .96) 9px, rgba(173, 86, 117, .18) 9.5px, transparent 10.4px);
+    background-size: 23px 12px;
+    background-repeat: repeat-x;
+  }
+  /* 蝴蝶结贴纸位置(JSX 注入 .notebook-bow;移动端默认隐藏,见媒体查询外的基础规则) */
+  .notebook-bow { display: block; position: absolute !important; top: -16px; right: 42px; z-index: 7; width: 64px; height: 64px; transform: rotate(14deg); filter: none; }
+
+  /* ---------- 左侧:封面区 + 活页环 + 索引凸舌 ---------- */
+  .sidebar {
+    position: sticky;
+    top: 0;
+    flex: 0 0 218px;
+    height: 100vh;
+    max-height: 100vh;
+    padding: 30px 14px 18px 26px;
+    border-right: 0;
+    border-radius: 26px 0 0 26px;
+    background:
+      radial-gradient(circle 7px at 13px 26px, #efe0e2 7px, #e7d3d6 7.5px, transparent 8.4px) 0 0 / 100% 52px repeat-y,
+      linear-gradient(180deg, rgba(252, 240, 236, .6), rgba(247, 235, 235, .45));
+  }
+  /* 活页环金属高光(叠一列在孔位上方) */
+  .sidebar::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 18px;
+    pointer-events: none;
+    content: '';
+    background: radial-gradient(circle 6.5px at 9px 26px, transparent 5.2px, rgba(178, 148, 152, .55) 5.6px, rgba(255, 255, 255, .5) 6.2px, transparent 7px) 0 0 / 100% 52px repeat-y;
+  }
+  .sidebar-brand {
+    margin-left: 8px;
+    padding: 12px 12px 11px;
+    border: 1.5px solid rgba(160, 78, 107, .22);
+    border-radius: 10px 14px 10px 15px;
+    background: rgba(255, 253, 250, .92);
+    box-shadow: var(--shadow-sm);
+    transform: rotate(-1.4deg);
+  }
+  .sidebar-brand strong { font-family: var(--font-hand); font-size: 14px; font-weight: 400; letter-spacing: .02em; }
+  .space-card {
+    margin: 26px 8px 22px 14px;
+    padding: 13px 14px;
+    border: 1.6px dashed rgba(160, 78, 107, .3);
+    border-radius: 4px;
+    background: repeating-linear-gradient(45deg, rgba(255, 251, 246, .96) 0 9px, rgba(253, 244, 240, .96) 9px 18px);
+    box-shadow: var(--shadow-sm);
+    transform: rotate(.8deg);
+  }
+  .desktop-nav { position: relative; display: grid; gap: 9px; margin-left: 2px; }
+  .nav-button {
+    position: relative;
+    min-height: 47px;
+    margin-left: -6px;
+    padding: 0 12px 0 22px;
+    border-radius: 4px 18px 18px 4px;
+    color: var(--ink);
+    font-family: var(--font-hand);
+    font-size: 14.5px;
+    letter-spacing: .05em;
+    box-shadow: var(--shadow-sm);
+    transition: transform .2s ease, box-shadow .2s ease, background .2s ease, color .2s ease;
+  }
+  .nav-button:nth-child(5n + 1) { background: linear-gradient(160deg, #eaf4f9, #ddedf4); color: var(--blue-deep); }
+  .nav-button:nth-child(5n + 2) { background: linear-gradient(160deg, #fdeef4, #f8e2ea); color: var(--role-w-ink); transform: rotate(.5deg); }
+  .nav-button:nth-child(5n + 3) { background: linear-gradient(160deg, #fdf4e0, #f6e9cd); color: var(--gold-deep); transform: rotate(-.5deg); }
+  .nav-button:nth-child(5n + 4) { background: linear-gradient(160deg, #eaf4f9, #ddedf4); color: var(--blue-deep); }
+  .nav-button:nth-child(5n + 5) { background: linear-gradient(160deg, #fdeef4, #f8e2ea); color: var(--role-w-ink); transform: rotate(.6deg); }
+  .nav-button:hover { transform: translateX(5px) rotate(0deg); box-shadow: var(--shadow-md); }
+  .nav-button.active {
+    transform: translateX(11px);
+    box-shadow: var(--shadow-md);
+    font-weight: 400;
+  }
+  .nav-button.active::after {
+    content: '♥';
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-52%);
+    font-size: 12px;
+    opacity: .8;
+  }
+  .nav-button.active:nth-child(odd) { background: linear-gradient(160deg, #d3e9f3, var(--blue-soft)); }
+  .nav-button.active:nth-child(even) { background: linear-gradient(160deg, #fbdfeb, var(--pink-soft)); }
+  .sidebar-bottom { margin-top: auto; padding: 18px 8px 0 10px; border-top: 0; }
+  .quiet-button {
+    width: max-content;
+    padding: 7px 13px;
+    border: 1.5px dashed var(--line-strong);
+    border-radius: var(--r-pill);
+    color: var(--muted);
+    font-size: 12px;
+    transform: rotate(-1deg);
+  }
+  .quiet-button:hover { color: var(--pink-deep); border-color: var(--pink); background: var(--pink-mist); }
+
+  /* ---------- 右侧:纸张页 + 打孔 + 页眉纸条 ---------- */
+  .main-content {
+    border-radius: 0 26px 26px 0;
+    background:
+      radial-gradient(circle 4.5px at 16px 30px, #f3e2e1 4.5px, rgba(243, 226, 225, .35) 5.2px, transparent 6px) 0 0 / 100% 58px repeat-y,
+      repeating-linear-gradient(180deg, transparent 0 34px, rgba(113, 142, 164, .055) 34px 35px),
+      linear-gradient(175deg, #fffdfa 0%, #fffbf6 100%);
+  }
+  .topbar {
+    position: relative;
+    min-height: 84px;
+    margin: 18px clamp(22px, 4vw, 56px) 0;
+    padding: 0 20px;
+    border-bottom: 2px dashed var(--line-strong);
+    background: transparent;
+  }
+  .topbar::before, .topbar::after {
+    position: absolute;
+    bottom: -9px;
+    z-index: 3;
+    width: 78px;
+    height: 20px;
+    pointer-events: none;
+    content: '';
+    opacity: .75;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, 0) 40%), linear-gradient(180deg, rgba(215, 140, 166, .55), rgba(214, 137, 164, .42));
+    clip-path: polygon(2% 0, 98% 4%, 100% 96%, 1% 100%);
+    transform: rotate(-3.4deg);
+  }
+  .topbar::before { left: 8px; }
+  .topbar::after { right: 8px; background: linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, 0) 40%), linear-gradient(180deg, rgba(109, 158, 182, .5), rgba(88, 141, 168, .4)); transform: rotate(2.8deg); }
+  .topbar h2 { font-family: var(--font-hand); font-size: 23px; letter-spacing: .06em; }
+  .page-content { padding: 30px clamp(28px, 4.4vw, 64px) 84px; }
+
+  /* 快乐体视觉补偿 */
+  .button { font-family: var(--font-hand); font-size: 13.5px; letter-spacing: .04em; }
+  .text-button, .quiet-button { font-family: var(--font-hand); letter-spacing: .03em; }
+  .text-button { font-size: 12.5px; }
+  h1, h2, h3 { letter-spacing: .04em; }
+  .welcome-band h1, .view-intro h1, .access-panel h1 { letter-spacing: .06em; }
+}
+
+/* 蝴蝶结仅桌面展示:移动端不参与布局(防止无约束块级元素挤压页面) */
+.notebook-bow { display: none; }
+@media (min-width: 701px) {
+  .notebook-bow { display: block; }
 }

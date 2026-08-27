@@ -590,6 +590,7 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
   return (
     <MotionConfig reducedMotion="user">
     <div className="app-shell">
+      <MaterialSticker asset={MATERIAL_ASSETS.ribbon} tone="rose" placement="notebook-bow" className="notebook-bow" />
        <aside className="sidebar">
         <div className="sidebar-brand"><span className="brand-mark"><Heart size={17} fill="currentColor" /></span><div><strong>our little space</strong><small>just us, in one place</small></div></div>
          <div className="space-card"><div className="space-card-top"><span className="status-dot" />{readOnly ? '公开预览' : config.publicDemo ? '公开演示' : remoteMode ? '共享空间' : '本地空间'}</div><strong>{data.spaceName}</strong><span>{readOnly || config.publicDemo ? '请勿放入隐私照片' : '两个人共同编辑'}</span></div>

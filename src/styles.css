@@ -661,8 +661,8 @@ h1, .view-intro h1, .welcome-band h1, .access-panel h1 { font-family: var(--font
 /* ---------- 波点底纹(全局 + 侧栏) ---------- */
 body {
   background-image:
-    radial-gradient(rgba(215, 140, 166, .1) 2.1px, transparent 2.7px),
-    radial-gradient(rgba(78, 135, 166, .08) 2.1px, transparent 2.7px),
+    radial-gradient(rgba(215, 140, 166, .16) 2.4px, transparent 3px),
+    radial-gradient(rgba(78, 135, 166, .13) 2.4px, transparent 3px),
     linear-gradient(rgba(255, 241, 240, .62), rgba(255, 241, 240, .62)),
     var(--cotton-lining-image);
   background-size: 30px 30px, 30px 30px, auto, 520px 520px;
@@ -981,6 +981,7 @@ body {
     border-right: 0;
     border-radius: 26px 0 0 26px;
     background:
+      radial-gradient(rgba(255, 255, 255, .9) 2.6px, transparent 3.2px) 4px 6px / 28px 28px repeat,
       radial-gradient(circle 7px at 13px 26px, #efe0e2 7px, #e7d3d6 7.5px, transparent 8.4px) 0 0 / 100% 52px repeat-y,
       linear-gradient(180deg, rgba(252, 240, 236, .6), rgba(247, 235, 235, .45));
   }

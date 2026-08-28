@@ -1313,3 +1313,73 @@ body {
 .portrait-medallion .role-avatar.role-w { background: linear-gradient(160deg, #e5a4bb, var(--role-w)); }
 .welcome-polaroid-body .role-avatar.role-l { background: linear-gradient(160deg, #6d9ebe, var(--role-l)); }
 .welcome-polaroid-body .role-avatar.role-w { background: linear-gradient(160deg, #e5a4bb, var(--role-w)); }
+
+/* 桌面端(横屏)隐藏漂浮甜品贴纸,保留布纹内衬;手机竖屏保留 */
+@media (min-width: 701px) {
+  .material-paper-decor > .material-sticker-sticker,
+  .lolita-page-decor > .material-sticker-sticker { display: none; }
+}
+
+/* 编辑回忆:照片关联芯片 */
+.memory-photo-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.memory-photo-chip {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--blue-mist);
+  padding: 0;
+  cursor: pointer;
+  transition: border-color .15s ease, opacity .15s ease;
+}
+.memory-photo-chip img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.memory-photo-chip.is-linkable:hover { border-color: var(--pink); }
+.memory-photo-chip.is-linking { border-color: var(--pink-deep); }
+.memory-photo-chip.is-removing { opacity: .45; }
+.memory-photo-chip.is-removing img { filter: grayscale(1); }
+.memory-photo-unlink {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(54, 42, 48, .78);
+  color: #fff;
+}
+.memory-photo-flag {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(178, 94, 124, .92);
+  color: #fff;
+  font-size: 9px;
+  line-height: 1.6;
+}
+.memory-attachments .label-hint { display: block; margin: 6px 0 3px; }
+
+/* 竖屏终版:拍立得一行置于文案下方,永不遮挡文字 */
+@media (max-width: 700px) {
+  .welcome-copy { max-width: 100% !important; }
+  .welcome-illustration {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    margin-top: 12px !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+    transform: rotate(-2deg) !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .welcome-band { flex-direction: column; align-items: stretch; }
+  .welcome-illustration { justify-content: flex-end !important; }
+}

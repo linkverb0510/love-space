@@ -1137,3 +1137,179 @@ body {
 .role-pair-stamp .role-avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fff; font-family: var(--font-serif); font-size: 15px; }
 .role-pair-stamp .role-avatar.role-l { background: var(--role-l); }
 .role-pair-stamp .role-avatar.role-w { background: var(--role-w); }
+
+/* ============================================================
+   portrait spotlight · 人物大幅展示 + 灯箱 + 贴贴彩蛋
+   ============================================================ */
+
+/* ---------- 首页人物卡(竖版大头像) ---------- */
+.role-pair-card {
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+  padding: 22px 14px 18px;
+  text-align: center;
+}
+.portrait-launch { position: relative; display: block; border: 0; background: none; padding: 0; border-radius: 50%; }
+.portrait-launch::before {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  z-index: 2;
+  width: 56px;
+  height: 17px;
+  margin-left: -28px;
+  content: '';
+  opacity: .8;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, 0) 40%), linear-gradient(180deg, rgba(215, 140, 166, .62), rgba(214, 137, 164, .48));
+  clip-path: polygon(2% 0, 98% 4%, 100% 96%, 1% 100%);
+  transform: rotate(-4deg);
+}
+.portrait-launch[data-role], .role-pair-card[data-role='w'] .portrait-launch::before { background: linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, 0) 40%), linear-gradient(180deg, rgba(109, 158, 182, .58), rgba(88, 141, 168, .46)); transform: rotate(4deg); }
+.portrait-medallion {
+  display: grid;
+  place-items: center;
+  width: 138px;
+  height: 138px;
+  overflow: hidden;
+  border: 4px solid #fffdfa;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: var(--shadow-md), 0 0 0 1.5px var(--line-strong);
+  transition: box-shadow .2s ease;
+}
+.portrait-launch { transition: transform .2s ease; }
+.portrait-launch:hover { transform: translateY(-3px) scale(1.02); }
+.portrait-launch:hover .portrait-medallion { box-shadow: var(--shadow-lg), 0 0 0 1.5px var(--line-strong); }
+.portrait-medallion .portrait-img { width: 100%; height: 100%; }
+.portrait-medallion .role-avatar {
+  display: grid;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 36px;
+}
+.role-pair-text { display: grid; gap: 3px; }
+.role-pair-text strong { font-size: 14.5px; }
+.role-pair-text small { margin-top: 0; }
+
+/* ---------- 欢迎横幅双人拍立得 ---------- */
+.welcome-illustration { align-items: flex-end; gap: 0; }
+.welcome-polaroid {
+  position: relative;
+  padding: 7px 7px 5px;
+  border: 0;
+  border-radius: 2px;
+  background: #fffefb;
+  box-shadow: var(--shadow-md);
+  transition: transform .2s ease, box-shadow .2s ease, z-index 0s;
+}
+.welcome-polaroid-l { z-index: 1; transform: rotate(-5deg); }
+.welcome-polaroid-w { z-index: 2; transform: rotate(4deg) translateX(-16px) translateY(12px); }
+.welcome-polaroid:hover { z-index: 3; transform: rotate(0deg) scale(1.05); box-shadow: var(--shadow-lg); }
+.welcome-polaroid .tape { width: 44px; height: 15px; }
+.welcome-polaroid-body { display: grid; place-items: center; width: 88px; height: 88px; overflow: hidden; border-radius: 2px; background: var(--blue-mist); }
+.welcome-polaroid .portrait-img { width: 100%; height: 100%; border-radius: 2px; }
+.welcome-polaroid-body .role-avatar { display: grid; place-items: center; width: 100%; height: 100%; color: #fff; font-family: var(--font-serif); font-size: 32px; }
+.welcome-polaroid-body .role-avatar.role-l { background: linear-gradient(160deg, #6d9ebe, var(--role-l)); }
+.welcome-polaroid-body .role-avatar.role-w { background: linear-gradient(160deg, #e5a4bb, var(--role-w)); }
+
+/* ---------- 头像灯箱 ---------- */
+.portrait-backdrop {
+  position: fixed;
+  z-index: var(--z-modal);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(52, 30, 40, .62);
+  backdrop-filter: blur(6px);
+}
+.portrait-lightbox {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 13px;
+  width: min(100%, 560px);
+  padding: 36px 26px 24px;
+  border: 1px solid #f2e4e1;
+  border-radius: var(--r-lg);
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  text-align: center;
+}
+.portrait-close { position: absolute; top: 10px; right: 10px; }
+.portrait-duo-large { position: relative; display: flex; align-items: center; gap: 26px; margin-top: 6px; }
+.portrait-big {
+  display: grid;
+  place-items: center;
+  width: min(38vw, 238px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 5px solid #fffdfa;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: var(--shadow-lg), 0 0 0 1.5px var(--line-strong);
+}
+.portrait-big .portrait-img { width: 100%; height: 100%; }
+.portrait-big .role-avatar {
+  display: grid;
+  place-items: center;
+  width: 52%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: clamp(34px, 9vw, 56px);
+}
+.portrait-big .role-avatar.role-l { background: linear-gradient(160deg, #6d9ebe, var(--role-l)); }
+.portrait-big .role-avatar.role-w { background: linear-gradient(160deg, #e5a4bb, var(--role-w)); }
+.hug-button {
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 2.5px solid #fffdfa;
+  border-radius: 50%;
+  background: linear-gradient(150deg, var(--pink-deep), var(--pink));
+  color: #fffaf7;
+  box-shadow: var(--shadow-md);
+  transition: transform .18s ease;
+}
+.hug-button:hover:not(:disabled) { transform: scale(1.1); animation: jelly-wobble .55s ease; }
+.hug-button:disabled { cursor: wait; opacity: .9; }
+.heart-burst { position: absolute; left: 50%; top: 40%; pointer-events: none; }
+.heart-burst-dot { position: absolute; filter: drop-shadow(1px 2px 2px rgba(93, 60, 74, .25)); }
+.portrait-phrase { min-height: 1.5em; color: var(--pink-deep); font-family: var(--font-hand); font-size: 20px; letter-spacing: .04em; }
+.portrait-hint { min-height: 1.5em; color: var(--faint); font-size: 11px; }
+.portrait-meta { display: flex; gap: 30px; }
+.portrait-meta span { display: grid; gap: 3px; }
+.portrait-meta strong { color: var(--ink); font-family: var(--font-hand); font-size: 14.5px; font-weight: 400; letter-spacing: .04em; }
+.portrait-meta small { color: var(--muted); font-size: 11px; }
+.portrait-settings { margin-top: 2px; }
+
+@media (max-width: 700px) {
+  .portrait-medallion { width: 98px; height: 98px; }
+  .portrait-medallion .role-avatar { width: 56px; height: 56px; font-size: 26px; }
+  .role-pair-card { padding: 18px 10px 14px; }
+  .role-pair-text strong { font-size: 13px; }
+  .welcome-copy { max-width: calc(100% - 104px); }
+  .welcome-polaroid-body { width: 62px; height: 62px; }
+  .welcome-polaroid-body .role-avatar { font-size: 22px; }
+  .welcome-polaroid-w { transform: rotate(4deg) translateX(-10px) translateY(8px); }
+  .portrait-duo-large { gap: 12px; }
+  .portrait-big { width: 33vw; border-width: 4px; }
+  .hug-button { width: 50px; height: 50px; }
+  .portrait-meta { gap: 18px; }
+}
+
+/* 人物卡字母兜底配色(白底白字修复) */
+.portrait-medallion .role-avatar.role-l { background: linear-gradient(160deg, #6d9ebe, var(--role-l)); }
+.portrait-medallion .role-avatar.role-w { background: linear-gradient(160deg, #e5a4bb, var(--role-w)); }
+.welcome-polaroid-body .role-avatar.role-l { background: linear-gradient(160deg, #6d9ebe, var(--role-l)); }
+.welcome-polaroid-body .role-avatar.role-w { background: linear-gradient(160deg, #e5a4bb, var(--role-w)); }

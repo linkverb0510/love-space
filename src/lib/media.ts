@@ -86,7 +86,17 @@ function parseDateText(value: string): string | undefined {
 
 function parseFilenameDate(name: string): string | undefined {
   const match = name.match(/(?:^|[^\d])(19\d{2}|20\d{2})[-_. ](\d{1,2})[-_. ](\d{1,2})(?:[^\d]|$)/);
-  return match ? formatDateParts(Number(match[1]), Number(match[2]), Number(match[3])) : undefined;
+  if (match) return formatDateParts(Number(match[1]), Number(match[2]), Number(match[3]));
+  const compact = name.match(/(?:^|[^\d])((?:19|20)\d{2})(\d{2})(\d{2})(?:[^\d]|$)/);
+  if (compact) return formatDateParts(Number(compact[1]), Number(compact[2]), Number(compact[3]));
+  const wechat = name.match(/mmexport(1\d{12})/i);
+  if (wechat) {
+    const date = new Date(Number(wechat[1]));
+    if (date.getFullYear() >= 2012 && date.getFullYear() <= 2037) {
+      return formatDateParts(date.getFullYear(), date.getMonth() + 1, date.getDate());
+    }
+  }
+  return undefined;
 }
 
 function parseTiffDate(bytes: Uint8Array, tiffOffset: number): string | undefined {

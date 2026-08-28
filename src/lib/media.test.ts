@@ -87,4 +87,22 @@ describe('image upload validation', () => {
 
     await expect(inferPhotoDate(file, '2026-08-03')).resolves.toBe('2025-03-17');
   });
+
+  it('recognizes compact numeric filenames like IMG_20230826_153315', async () => {
+    const file = { name: 'IMG_20230826_153315.jpg', type: 'image/jpeg', size: 1, lastModified: 0 } as File;
+
+    await expect(inferPhotoDate(file, '2026-08-03')).resolves.toBe('2023-08-26');
+  });
+
+  it('recognizes wechat mmexport millisecond timestamps', async () => {
+    const file = { name: 'mmexport1693030000000.jpg', type: 'image/jpeg', size: 1, lastModified: 0 } as File;
+
+    await expect(inferPhotoDate(file, '2026-08-03')).resolves.toBe('2023-08-26');
+  });
+
+  it('rejects impossible compact dates instead of guessing', async () => {
+    const file = { name: 'IMG_20231399.jpg', type: 'image/jpeg', size: 1, lastModified: 0 } as File;
+
+    await expect(inferPhotoDate(file, '2026-08-03')).resolves.toBe('2026-08-03');
+  });
 });

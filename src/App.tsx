@@ -23,13 +23,14 @@ import {
   Pencil,
   Plus,
   Play,
+  Search,
   Settings2,
   Sparkles,
   Trash2,
   Upload,
   X
 } from 'lucide-react';
-import { createMemoryDraftFromPlan, getNextMilestone, getTimelineEntries, groupPhotosByDate } from './lib/domain';
+import { createMemoryDraftFromPlan, filterPhotos, getNextMilestone, getTimelineEntries, groupPhotosByDate, type PhotoLinkFilter, type PhotoRoleFilter } from './lib/domain';
 import { getDateInTimezone, getRelationshipDuration, SPACE_TIMEZONE } from './lib/dates';
 import { readRelationshipStart } from './lib/editing';
 import { inferPhotoDate, pairPhotoFiles, preparePhotoAssets, validateMediaFile } from './lib/media';
@@ -87,13 +88,19 @@ type SheetState =
   | { type: 'portraits' }
   | null;
 
+type PhotoBatchAction =
+  | { type: 'date'; date: string }
+  | { type: 'caption'; caption: string }
+  | { type: 'link'; entryId?: string }
+  | { type: 'delete' };
+
 type UploadItem = {
   id: string;
   name: string;
   file: File;
   motion?: File;
   status: 'preparing' | 'uploading' | 'done' | 'failed';
-  stage: '等待处理' | '生成展示版' | '保存媒体' | '已完成' | '失败';
+  stage: string;
   error?: string;
   retryable?: boolean;
   timelineEntryId?: string;
@@ -605,6 +612,36 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
     setSheet(null);
   }
 
+  async function applyPhotoBatch(photos: Photo[], action: PhotoBatchAction): Promise<boolean> {
+    if (!canWrite() || photos.length === 0) return false;
+    if (action.type === 'delete' && !window.confirm(`确定删除选中的 ${photos.length} 张照片吗？删除后不可恢复。`)) return false;
+    setSyncStatus('saving');
+    let savedCount = 0;
+    let failedCount = 0;
+    for (const photo of photos) {
+      try {
+        if (action.type === 'delete') {
+          await repository.deletePhoto(photo, photo.version ?? 1);
+          revokeLocalPhotoSources(photo);
+          if (photo.assetKey || photo.thumbnailAssetKey || photo.originalAssetKey || photo.motionAssetKey) {
+            void deleteLocalAssets([photo.assetKey, photo.thumbnailAssetKey, photo.originalAssetKey, photo.motionAssetKey].filter((key): key is string => Boolean(key)));
+          }
+          setData((current) => ({ ...current, photos: current.photos.filter((item) => item.id !== photo.id) }));
+        } else {
+          const patch = action.type === 'date' ? { date: action.date } : action.type === 'caption' ? { caption: action.caption.trim() || photo.caption } : { timelineEntryId: action.entryId };
+          const savedPhoto = await repository.updatePhoto({ ...photo, ...patch });
+          setData((current) => replacePhoto(current, savedPhoto));
+        }
+        savedCount += 1;
+      } catch {
+        failedCount += 1;
+      }
+    }
+    setSyncStatus(failedCount > 0 ? 'error' : 'clean');
+    setToast(failedCount > 0 ? `完成 ${savedCount} 张、失败 ${failedCount} 张；失败的可能被另一台设备修改过，请重试。` : action.type === 'delete' ? `已删除 ${savedCount} 张照片。` : `已更新 ${savedCount} 张照片。`);
+    return failedCount === 0;
+  }
+
   async function startUpload(item: UploadItem) {
     if (!canWrite()) {
       setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'failed', error: '公开预览为只读模式' } : upload));
@@ -619,7 +656,7 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
       setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'uploading', stage: '保存媒体' } : upload));
       const photo = await repository.uploadPhoto(assets, { id: photoId, caption: item.name, date: photoDate, timelineEntryId: item.timelineEntryId, createdByRole: item.createdByRole ?? activeRole });
       updateData((current) => ({ ...current, photos: [photo, ...current.photos] }));
-      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'done', stage: '已完成' } : upload));
+      setUploads((current) => current.map((upload) => upload.id === item.id ? { ...upload, status: 'done', stage: `已完成 · ${photoDate}` } : upload));
       setSyncStatus('clean');
       setToast('照片已经加入照片墙。');
     } catch (error) {
@@ -760,7 +797,7 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
              <motion.div key={view} {...viewFadeRise}>
               {view === 'home' && <Dashboard data={data} activeRole={activeRole} relationship={relationship} nextMilestone={nextMilestone} recentEntry={recentEntry} recentPhoto={recentPhoto} timezone={data.timezone} readOnly={readOnly} canWrite={editingReady} avatars={avatarUrls} openView={openView} onOpenPortraits={() => setSheet({ type: 'portraits' })} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onAddPlan={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onSetRelationshipStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onTogglePlan={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} />}
               {view === 'timeline' && <TimelineView entries={timeline} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onAddMemory={() => { if (editingReady) setSheet({ type: 'memory-form' }); else canWrite(); }} onAddMilestone={() => { if (editingReady) setSheet({ type: 'milestone-form' }); else canWrite(); }} onOpen={(entry) => setSheet({ type: 'timeline-detail', entry })} onEdit={(entry) => setSheet(entry.type === 'memory' ? { type: 'memory-form', entry } : { type: 'milestone-form', entry })} onDelete={(entry) => void deleteTimelineEntry(entry)} />}
-              {view === 'photos' && <PhotosView photos={data.photos} uploads={uploads} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onUpload={addPhotos} onOpen={(photo) => setSheet({ type: 'photo-detail', photo })} onOpenTimeline={(entryId) => openView('timeline', entryId)} onClearUpload={(id) => setUploads((current) => current.filter((item) => item.id !== id))} onRetry={retryUpload} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} />}
+              {view === 'photos' && <PhotosView photos={data.photos} uploads={uploads} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onUpload={addPhotos} onOpen={(photo) => setSheet({ type: 'photo-detail', photo })} onClearUpload={(id) => setUploads((current) => current.filter((item) => item.id !== id))} onRetry={retryUpload} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} onBatchPhotos={(photos, action) => applyPhotoBatch(photos, action)} />}
               {view === 'plans' && <PlansView plans={data.plans} readOnly={readOnly} disabled={!editingReady} onAdd={() => { if (editingReady) setSheet({ type: 'plan-form' }); else canWrite(); }} onEdit={(plan) => setSheet({ type: 'plan-form', plan })} onDelete={(plan) => void deletePlan(plan)} onToggle={(plan) => { if (editingReady) void savePlan({ ...plan, status: plan.status === '已完成' ? '计划中' : '已完成' }); else canWrite(); }} onWriteMemory={(plan) => { if (editingReady) setSheet({ type: 'memory-form', draft: { ...createMemoryDraftFromPlan(plan, todayString(data.timezone)), createdByRole: activeRole } }); else canWrite(); }} />}
               {view === 'settings' && <SettingsView data={data} activeRole={activeRole} publicDemo={config.publicDemo} remoteMode={remoteMode} readOnly={readOnly} onReset={resetSpace} onEditStart={() => { if (editingReady) setSheet({ type: 'settings-form' }); else canWrite(); }} onRoleChange={setActiveRole} onLock={onLock} />}
              </motion.div>
@@ -828,44 +865,85 @@ function formatMonthLabel(month: string): string {
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long' }).format(new Date(`${month}-01T12:00:00`));
 }
 
-function formatPhotoDay(date: string): string {
-  return new Intl.DateTimeFormat('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(`${date}T12:00:00`));
-}
 
-function photoAspectRatio(photo: Photo): number {
-  if (!photo.width || !photo.height) return 1.25;
-  return Math.min(1.65, Math.max(.72, photo.width / photo.height));
-}
 
-function useScrapbookViewport(): boolean {
-  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia('(max-width: 700px)').matches);
-  useEffect(() => {
-    const query = window.matchMedia('(max-width: 700px)');
-    const listener = (event: MediaQueryListEvent) => setIsNarrow(event.matches);
-    query.addEventListener('change', listener);
-    return () => query.removeEventListener('change', listener);
-  }, []);
-  return isNarrow;
-}
 
-function PhotosView({ photos, uploads, timeline, readOnly, disabled, onUpload, onOpen, onOpenTimeline, onClearUpload, onRetry, getAsset }: { photos: Photo[]; uploads: UploadItem[]; timeline: TimelineDisplayEntry[]; readOnly: boolean; disabled: boolean; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: (photo: Photo) => void; onOpenTimeline: (entryId: string) => void; onClearUpload: (id: string) => void; onRetry: (item: UploadItem) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
-  const groups = groupPhotosByDate(photos);
+
+
+
+function PhotosView({ photos, uploads, timeline, readOnly, disabled, onUpload, onOpen, onClearUpload, onRetry, getAsset, onBatchPhotos }: { photos: Photo[]; uploads: UploadItem[]; timeline: TimelineDisplayEntry[]; readOnly: boolean; disabled: boolean; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: (photo: Photo) => void; onClearUpload: (id: string) => void; onRetry: (item: UploadItem) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined>; onBatchPhotos: (photos: Photo[], action: PhotoBatchAction) => Promise<boolean> }) {
+  const [monthFilter, setMonthFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState<PhotoRoleFilter>('all');
+  const [linkFilter, setLinkFilter] = useState<PhotoLinkFilter>('all');
+  const [query, setQuery] = useState('');
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchDate, setBatchDate] = useState('');
+  const [batchCaption, setBatchCaption] = useState('');
+  const [batchEntry, setBatchEntry] = useState('');
+
+  const filtered = useMemo(() => filterPhotos(photos, { month: monthFilter, role: roleFilter, linked: linkFilter, query }), [photos, monthFilter, roleFilter, linkFilter, query]);
+  const groups = useMemo(() => groupPhotosByDate(filtered), [filtered]);
+  const months = useMemo(() => Array.from(new Set(photos.map((photo) => photo.date.slice(0, 7)))).sort((a, b) => b.localeCompare(a)), [photos]);
+  const memories = useMemo(() => timeline.filter((entry) => entry.type === 'memory'), [timeline]);
+  const canBatch = !readOnly && !disabled;
+
+  function toggleSelected(photoId: string) {
+    setSelectedIds((current) => current.includes(photoId) ? current.filter((id) => id !== photoId) : [...current, photoId]);
+  }
+  function toggleMonth(monthPhotos: Photo[]) {
+    const ids = monthPhotos.map((photo) => photo.id);
+    const allSelected = ids.every((id) => selectedIds.includes(id));
+    setSelectedIds((current) => allSelected ? current.filter((id) => !ids.includes(id)) : Array.from(new Set([...current, ...ids])));
+  }
+  async function applyBatch(action: PhotoBatchAction) {
+    const chosen = photos.filter((photo) => selectedIds.includes(photo.id));
+    const done = await onBatchPhotos(chosen, action);
+    if (done) {
+      setSelectedIds([]);
+      setSelectMode(false);
+      setBatchDate('');
+      setBatchCaption('');
+      setBatchEntry('');
+    }
+  }
+
   return <div className="view-stack">
-    <ViewIntro eyebrow="THE LITTLE DETAILS" title="照片" description={`${photos.length} 张照片，把普通日子串成一面墙。`} action={!readOnly && <label className="button button-dark"><Upload size={17} />选择照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={onUpload} disabled={disabled} /></label>} />
-    {groups.length > 0 ? <div className="photo-timeline" aria-label="照片时间线">{groups.map((month) => <section className="photo-month" key={month.month} aria-labelledby={`photo-month-${month.month}`}><div className="photo-month-heading"><span className="photo-month-knot" aria-hidden="true" /><h2 id={`photo-month-${month.month}`}>{formatMonthLabel(month.month)}</h2><FilmStripDivider className="month-strip" /></div>{month.days.map((day) => <section className="photo-day" key={day.date} aria-labelledby={`photo-day-${day.date}`}><div className="photo-day-heading"><time id={`photo-day-${day.date}`} dateTime={day.date}>{formatPhotoDay(day.date)}</time><span>{day.photos.length} 张照片</span></div><div className="photo-rope-row">{day.photos.map((photo, index) => <PhotoCard key={photo.id} photo={photo} index={index} timeline={timeline} onOpen={onOpen} onOpenTimeline={onOpenTimeline} getAsset={getAsset} />)}</div></section>)}</section>)}</div> : <EmptyState text={readOnly ? '公开预览暂无照片。' : '还没有照片，选几张你们的日常吧。'} sticker="doughnut" />}
+    <ViewIntro eyebrow="THE LITTLE DETAILS" title="照片" description={`${photos.length} 张照片，把普通日子串成一面墙。`} action={!readOnly && <div className="action-group"><label className="button button-dark"><Upload size={17} />选择照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={onUpload} disabled={disabled} /></label>{canBatch && <button className={`button ${selectMode ? 'button-light' : 'button-outline'}`} onClick={() => { setSelectMode((current) => !current); setSelectedIds([]); }}>{selectMode ? '退出批量' : '批量管理'}</button>}</div>} />
+    {photos.length > 0 && <div className="photo-filter-bar">
+      <label>月份<select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}><option value="all">全部</option>{months.map((month) => <option key={month} value={month}>{formatMonthLabel(month)}</option>)}</select></label>
+      <label>拍摄者<select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as PhotoRoleFilter)}><option value="all">全部</option><option value="l">L</option><option value="w">W</option><option value="both">一起</option></select></label>
+      <label>状态<select value={linkFilter} onChange={(event) => setLinkFilter(event.target.value as PhotoLinkFilter)}><option value="all">全部</option><option value="linked">已关联</option><option value="standalone">独立</option></select></label>
+      <label className="photo-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索说明…" /></label>
+    </div>}
+    {groups.length > 0 ? <div className="photo-timeline" aria-label="照片时间线">{groups.map((month) => {
+      const monthPhotos = month.days.flatMap((day) => day.photos);
+      const monthAllSelected = monthPhotos.every((photo) => selectedIds.includes(photo.id));
+      return <section className="photo-month" key={month.month} aria-labelledby={`photo-month-${month.month}`}>
+        <div className="photo-month-heading"><span className="photo-month-knot" aria-hidden="true" /><h2 id={`photo-month-${month.month}`}>{formatMonthLabel(month.month)}<span className="month-count">{monthPhotos.length}</span></h2><FilmStripDivider className="month-strip" />{selectMode && <button className="text-button month-select" onClick={() => toggleMonth(monthPhotos)}>{monthAllSelected ? '取消本月' : '全选本月'}</button>}</div>
+        <div className="photo-wall">{monthPhotos.map((photo, index) => <PhotoCard key={photo.id} photo={photo} index={index} selectMode={selectMode} selected={selectedIds.includes(photo.id)} onOpen={onOpen} onToggleSelect={toggleSelected} getAsset={getAsset} />)}</div>
+      </section>;
+    })}</div> : <EmptyState text={readOnly ? '公开预览暂无照片。' : photos.length > 0 ? '没有符合筛选条件的照片，换个筛选试试。' : '还没有照片，选几张你们的日常吧。'} sticker="doughnut" />}
     {uploads.length > 0 && <UploadQueue uploads={uploads} onClear={onClearUpload} onRetry={onRetry} />}
     {photos.length > 0 && <p className="view-note"><Camera size={16} /> 原图保留，照片墙按屏幕尺寸加载展示版。</p>}
+    <AnimatePresence>
+      {selectMode && <motion.div key="batch-bar" className="batch-bar" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 18 }} transition={springSnappy}>
+        <strong>已选 {selectedIds.length} 张</strong>
+        <span className="batch-field"><input type="date" value={batchDate} onChange={(event) => setBatchDate(event.target.value)} aria-label="目标日期" /><button className="button button-outline" disabled={!batchDate || !selectedIds.length} onClick={() => void applyBatch({ type: 'date', date: batchDate })}>设为日期</button></span>
+        <span className="batch-field"><select value={batchEntry} onChange={(event) => setBatchEntry(event.target.value)} aria-label="目标回忆"><option value="">关联到回忆…</option>{memories.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}<option value="none">取消关联</option></select><button className="button button-outline" disabled={!batchEntry || !selectedIds.length} onClick={() => void applyBatch({ type: 'link', entryId: batchEntry === 'none' ? undefined : batchEntry })}>应用</button></span>
+        <span className="batch-field"><input type="text" value={batchCaption} onChange={(event) => setBatchCaption(event.target.value)} placeholder="统一说明" aria-label="统一说明" /><button className="button button-outline" disabled={!batchCaption.trim() || !selectedIds.length} onClick={() => void applyBatch({ type: 'caption', caption: batchCaption })}>改说明</button></span>
+        <button className="button button-danger" disabled={!selectedIds.length} onClick={() => void applyBatch({ type: 'delete' })}><Trash2 size={15} />删除</button>
+        <button className="button button-ghost" onClick={() => { setSelectMode(false); setSelectedIds([]); }}>完成</button>
+      </motion.div>}
+    </AnimatePresence>
   </div>;
 }
 
-function PhotoCard({ photo, index, timeline, onOpen, onOpenTimeline, getAsset }: { photo: Photo; index: number; timeline: TimelineDisplayEntry[]; onOpen: (photo: Photo) => void; onOpenTimeline: (entryId: string) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
+function PhotoCard({ photo, index, selectMode, selected, onOpen, onToggleSelect, getAsset }: { photo: Photo; index: number; selectMode: boolean; selected: boolean; onOpen: (photo: Photo) => void; onToggleSelect: (photoId: string) => void; getAsset: (photo: Photo, variant: PhotoAssetVariant) => Promise<string | undefined> }) {
   const [refreshedSrc, setRefreshedSrc] = useState<string>();
   const [hasRetriedSource, setHasRetriedSource] = useState(false);
-  const isNarrow = useScrapbookViewport();
-  const linkedEntry = photo.timelineEntryId ? timeline.find((entry) => entry.id === photo.timelineEntryId) : undefined;
   const displaySrc = refreshedSrc || photo.thumbnailSrc || photo.src;
   const srcSet = refreshedSrc ? undefined : photo.thumbnailSrc && photo.src && photo.thumbnailSrc !== photo.src ? `${photo.thumbnailSrc} 720w, ${photo.src} 2048w` : undefined;
-  const restingRotation = isNarrow ? -0.7 : index % 2 === 0 ? -1.1 : 1.1;
 
   async function refreshExpiredSource() {
     if (hasRetriedSource) return;
@@ -874,21 +952,16 @@ function PhotoCard({ photo, index, timeline, onOpen, onOpenTimeline, getAsset }:
     if (source) setRefreshedSrc(source);
   }
 
-  return <motion.article
-    className={`photo-hanging-card doily-host ${index % 2 === 0 ? 'hang-left' : 'hang-right'} ${photo.mediaKind === 'live' ? 'is-live' : ''}`}
-    style={{ '--photo-ratio': photoAspectRatio(photo) } as CSSProperties}
-    initial={{ opacity: 0, y: 26, rotate: restingRotation * 2.4 }}
-    whileInView={{ opacity: 1, y: 0, rotate: restingRotation }}
-    viewport={{ once: true, margin: '0px 0px -36px 0px' }}
-    whileHover={{ y: -6, rotate: 0 }}
-    transition={{ type: 'spring', stiffness: 260, damping: 25 }}>
-    <span className="photo-clip" aria-hidden="true" />
-    <button className="photo-card-main" onClick={() => onOpen(photo)} aria-label={`查看${photo.caption || '照片'}`}>
-      <motion.div className="photo-frame" layoutId={`photo-${photo.id}`}>{photo.previewAvailable === false ? <div className="photo-unavailable"><ImageIcon size={22} /><span>当前浏览器无法预览原格式</span></div> : <img src={displaySrc} srcSet={srcSet} sizes="(max-width: 700px) 82vw, 360px" alt={photo.caption || '照片'} loading="lazy" decoding="async" onError={() => void refreshExpiredSource()} />}{photo.mediaKind === 'live' && <span className="photo-live-badge"><Play size={11} fill="currentColor" />动态</span>}</motion.div>
-      <div className="photo-card-copy"><div className="photo-card-title"><strong>{photo.caption || '未命名照片'}</strong><RoleBadge role={photo.createdByRole} prefix="由 " /></div><time dateTime={photo.date}>{formatShortDate(photo.date)}</time></div>
+  return <article className={`photo-wall-card ${index % 2 ? 'tilt-r' : 'tilt-l'} ${selected ? 'is-selected' : ''}`}>
+    {selectMode && <button className="photo-check" aria-label={selected ? '取消选择这张照片' : '选择这张照片'} onClick={() => onToggleSelect(photo.id)}>{selected && <Check size={13} />}</button>}
+    <button className="photo-wall-main" onClick={() => selectMode ? onToggleSelect(photo.id) : onOpen(photo)} aria-label={`查看${photo.caption || '照片'}`}>
+      <span className="photo-wall-media">
+        {photo.previewAvailable === false ? <span className="photo-unavailable"><ImageIcon size={18} /><span>无法预览</span></span> : <img src={displaySrc} srcSet={srcSet} sizes="(max-width: 700px) 46vw, 240px" alt={photo.caption || '照片'} loading="lazy" decoding="async" onError={() => void refreshExpiredSource()} />}
+        {photo.mediaKind === 'live' && <span className="photo-live-badge"><Play size={10} fill="currentColor" />动态</span>}
+      </span>
+      <span className="photo-wall-caption"><strong>{photo.caption || '未命名照片'}</strong><time dateTime={photo.date}>{photo.date.slice(5).replace('-', '/')}</time></span>
     </button>
-    {linkedEntry && <button className="photo-memory-link" onClick={() => onOpenTimeline(linkedEntry.id)}><span>{linkedEntry.title}</span><ArrowUpRight size={13} /></button>}
-  </motion.article>;
+  </article>;
 }
 
 function UploadQueue({ uploads, onClear, onRetry }: { uploads: UploadItem[]; onClear: (id: string) => void; onRetry: (item: UploadItem) => void }) {

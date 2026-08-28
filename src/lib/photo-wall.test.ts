@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupPhotosByDate } from './domain';
+import { filterPhotos, groupPhotosByDate } from './domain';
 import type { Photo } from '../types';
 
 function photo(id: string, date: string, createdAt?: string): Photo {
@@ -31,5 +31,34 @@ describe('photo wall grouping', () => {
     groupPhotosByDate(source);
 
     expect(source.map((item) => item.id)).toEqual(originalIds);
+  });
+});
+
+describe('photo wall filtering', () => {
+  const source: Photo[] = [
+    { ...photo('l-linked', '2026-01-02'), caption: '海边的风', createdByRole: 'l', timelineEntryId: 'memory-1' },
+    { ...photo('w-standalone', '2026-01-02'), caption: '甜品时间', createdByRole: 'w' },
+    { ...photo('l-standalone', '2025-12-24'), caption: '冬夜的灯', createdByRole: 'l' }
+  ];
+
+  it('filters by month', () => {
+    expect(filterPhotos(source, { month: '2026-01', role: 'all', linked: 'all', query: '' }).map((item) => item.id)).toEqual(['l-linked', 'w-standalone']);
+  });
+
+  it('filters by creator role', () => {
+    expect(filterPhotos(source, { month: 'all', role: 'w', linked: 'all', query: '' }).map((item) => item.id)).toEqual(['w-standalone']);
+  });
+
+  it('filters by linked state', () => {
+    expect(filterPhotos(source, { month: 'all', role: 'all', linked: 'standalone', query: '' }).map((item) => item.id)).toEqual(['w-standalone', 'l-standalone']);
+  });
+
+  it('matches caption text case-insensitively', () => {
+    expect(filterPhotos(source, { month: 'all', role: 'all', linked: 'all', query: '海边' }).map((item) => item.id)).toEqual(['l-linked']);
+  });
+
+  it('combines filters with AND semantics', () => {
+    expect(filterPhotos(source, { month: '2026-01', role: 'l', linked: 'linked', query: '' }).map((item) => item.id)).toEqual(['l-linked']);
+    expect(filterPhotos(source, { month: '2025-12', role: 'w', linked: 'all', query: '' })).toEqual([]);
   });
 });

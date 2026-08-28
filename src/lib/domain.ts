@@ -230,6 +230,28 @@ export function groupPhotosByDate(photos: Photo[]): PhotoMonthGroup[] {
   return Array.from(months.values());
 }
 
+export type PhotoRoleFilter = 'all' | 'l' | 'w' | 'both';
+export type PhotoLinkFilter = 'all' | 'linked' | 'standalone';
+
+export type PhotoFilter = {
+  month: string;
+  role: PhotoRoleFilter;
+  linked: PhotoLinkFilter;
+  query: string;
+};
+
+export function filterPhotos(photos: Photo[], filter: PhotoFilter): Photo[] {
+  const query = filter.query.trim().toLowerCase();
+  return photos.filter((photo) => {
+    if (filter.month !== 'all' && photo.date.slice(0, 7) !== filter.month) return false;
+    if (filter.role !== 'all' && photo.createdByRole !== filter.role) return false;
+    if (filter.linked === 'linked' && !photo.timelineEntryId) return false;
+    if (filter.linked === 'standalone' && photo.timelineEntryId) return false;
+    if (query && !photo.caption.toLowerCase().includes(query)) return false;
+    return true;
+  });
+}
+
 export function getNextMilestone(space: SpaceData, now = new Date()): TimelineDisplayEntry | undefined {
   return getTimelineEntries(space, now)
     .filter((entry) => entry.type === 'milestone' && !entry.systemRole && entry.nextOccurrence)

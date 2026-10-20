@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&family=Quicksand:wght@500;600;700&family=ZCOOL+KuaiLe&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Noto+Serif+SC:wght@400;600&family=DM+Sans:wght@400;500;600;700&family=Quicksand:wght@500;600;700&family=ZCOOL+KuaiLe&display=swap');
 
 /* ============================================================
    OUR LITTLE SPACE · retro film scrapbook system
@@ -73,6 +73,7 @@
   --font-type: 'Baloo 2', 'Quicksand', 'Noto Sans SC', sans-serif;
   --font-serif: 'Baloo 2', 'ZCOOL KuaiLe', Georgia, serif;
   --font-cute: 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
+  --font-read: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
   --vanilla: #fff6e8;
   --caramel: #c98d5e;
   --cotton-candy: #fbdce8;
@@ -1502,4 +1503,101 @@ body {
   }
   .batch-field { justify-content: space-between; }
   .batch-field .button { flex: 0 0 auto; }
+}
+
+/* ============================================================
+   memory reading · 回忆详情信纸排版 + 留言
+   ============================================================ */
+.sheet-memory {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(90deg, transparent 0 30px, rgba(197, 102, 128, .28) 30px 31.5px, transparent 31.5px),
+    repeating-linear-gradient(180deg, transparent 0 33px, rgba(113, 142, 164, .12) 33px 34px);
+  background-position: 0 12px;
+}
+.sheet-memory .modal-head { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1.5px dashed var(--line-strong); }
+.sheet-memory .detail-title { margin-top: 12px; font-size: 32px; line-height: 1.3; }
+.sheet-memory .detail-body {
+  color: #4d413c;
+  font-family: var(--font-read);
+  font-size: 15.5px;
+  line-height: 2.15;
+  text-align: justify;
+}
+.sheet-memory .detail-meta { padding-bottom: 2px; }
+.sheet-memory .tag-row { margin-top: 14px; }
+.sheet-memory .detail-photo-grid { margin-top: 18px; }
+
+.autosave-note { margin-top: -6px; color: var(--faint); font-size: 10.5px; }
+
+.memory-comments { margin-top: 20px; padding-top: 14px; border-top: 1.5px dashed var(--line-strong); display: grid; gap: 10px; }
+.memory-comments-head { display: flex; align-items: center; gap: 6px; color: var(--pink-deep); font-family: var(--font-type); font-size: 11px; letter-spacing: .05em; }
+.memory-comment-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.memory-comment {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper-warm);
+  box-shadow: var(--shadow-sm);
+}
+.memory-comment[data-role='l'] { background: var(--blue-mist); border-color: #c4dee9; }
+.memory-comment[data-role='w'] { background: var(--pink-mist); border-color: #eecbd6; }
+.memory-comment-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 12px;
+}
+.memory-comment[data-role='l'] .memory-comment-mark { background: var(--role-l); }
+.memory-comment[data-role='w'] .memory-comment-mark { background: var(--role-w); }
+.memory-comment p { margin: 0; color: var(--ink); font-family: var(--font-read); font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; }
+.memory-comment time { display: block; margin-top: 3px; color: var(--faint); font-family: var(--font-type); font-size: 9px; }
+.memory-comment-empty { margin: 0; color: var(--faint); font-size: 12px; }
+.memory-comment-editor { display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 8px; }
+.memory-comment-roles { display: grid; gap: 4px; }
+.memory-comment-roles button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--muted);
+  font-family: var(--font-serif);
+  font-size: 12px;
+}
+.memory-comment-roles button.selected[data-role='l'] { background: var(--role-l); border-color: var(--role-l); color: #fff; }
+.memory-comment-roles button.selected[data-role='w'] { background: var(--role-w); border-color: var(--role-w); color: #fff; }
+.memory-comment-editor textarea {
+  min-height: 46px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+}
+.memory-comment-editor .button { min-height: 46px; }
+
+.comment-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 3px 9px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-pill);
+  color: var(--pink-deep);
+  font-size: 10.5px;
 }

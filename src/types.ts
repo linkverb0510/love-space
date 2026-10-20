@@ -17,10 +17,18 @@ type TimelineBase = {
   createdByRole?: SpaceRole;
 };
 
+export type MemoryComment = {
+  id: string;
+  role: SpaceRole;
+  text: string;
+  createdAt: string;
+};
+
 export type MemoryEntry = TimelineBase & {
   type: 'memory';
   body: string;
   tags: string[];
+  comments?: MemoryComment[];
 };
 
 export type MilestoneEntry = TimelineBase & {

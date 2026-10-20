@@ -12,7 +12,8 @@ import { EMPTY_SPACE_DATA, loadSpaceData, saveSpaceData } from './storage';
 import { ConflictError } from './errors';
 import { SPACE_TIMEZONE } from './dates';
 import { normalizeAssignee, normalizeRole } from './roles';
-import type { MemoryEntry, MilestoneEntry, Photo, PhotoAssetVariant, PlanItem, SpaceData, SpaceRole, TimelineEntry } from '../types';
+import type {MemoryComment,
+  MemoryEntry, MilestoneEntry, Photo, PhotoAssetVariant, PlanItem, SpaceData, SpaceRole, TimelineEntry} from '../types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const PHOTO_BUCKET = 'love-space-photos';

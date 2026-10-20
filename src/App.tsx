@@ -19,6 +19,7 @@ import {
   ListTodo,
   LockKeyhole,
   MapPin,
+  MessageCircle,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -54,6 +55,7 @@ import {
   resetSpaceData
 } from './lib/storage';
 import type {
+  MemoryComment,
   MemoryEntry,
   MilestoneEntry,
   Photo,
@@ -549,6 +551,18 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
     }
   }
 
+  function addMemoryComment(entry: TimelineDisplayEntry, text: string, role: SpaceRole) {
+    if (!canWrite() || entry.type !== 'memory') return;
+    const comment: MemoryComment = { id: newId('comment'), role, text, createdAt: new Date().toISOString() };
+    void (async () => {
+      const saved = await saveMutation(() => repository.saveTimelineEntry({ ...entry, comments: [...(entry.comments ?? []), comment] } as MemoryEntry));
+      if (!saved) return;
+      updateData((current) => replaceTimeline(current, saved));
+      setSheet((current) => current?.type === 'timeline-detail' && current.entry.id === entry.id ? { type: 'timeline-detail', entry: { ...current.entry, comments: saved.type === 'memory' ? saved.comments ?? [] : [] } } : current);
+      setToast('留言已经写上。');
+    })();
+  }
+
   async function deleteTimelineEntry(entry: TimelineDisplayEntry) {
     if (entry.type === 'milestone' && entry.systemRole) {
       setToast('恋爱开始日请在设置中修改，不能从时间线删除。');
@@ -776,7 +790,7 @@ function SpaceApp({ config, onLock, readOnly = false }: { config: RuntimeConfig;
   const editingReady = !readOnly && dataReady;
   const lolitaSurface = view === 'timeline' ? 'timeline' : view === 'photos' ? 'photos' : 'home';
 
-  const activeSheetNode = sheet?.type === 'portraits' ? { key: 'sheet-portraits', node: <PortraitSheet avatars={avatarUrls} days={relationship?.totalDays ?? 0} onClose={() => setSheet(null)} onOpenSettings={() => setView('settings')} /> } : sheet?.type === 'timeline-detail' ? { key: 'sheet-timeline-detail', node: <TimelineDetailSheet entry={sheet.entry} photos={data.photos} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet(sheet.entry.type === 'memory' ? { type: 'memory-form', entry: sheet.entry } : { type: 'milestone-form', entry: sheet.entry })} onDelete={() => void deleteTimelineEntry(sheet.entry)} /> } : sheet?.type === 'memory-form' ? { key: 'sheet-memory-form', node: <MemoryForm entry={sheet.entry} draft={sheet.draft} activeRole={activeRole} photos={data.photos} onClose={() => setSheet(null)} onSubmit={(memory, attachments, linkPhotoIds, unlinkPhotoIds) => void saveTimelineEntry(memory, attachments, linkPhotoIds, unlinkPhotoIds)} /> } : sheet?.type === 'milestone-form' ? { key: 'sheet-milestone-form', node: <MilestoneForm entry={sheet.entry} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={saveTimelineEntry} /> } : sheet?.type === 'plan-form' ? { key: 'sheet-plan-form', node: <PlanForm plan={sheet.plan} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={savePlan} /> } : sheet?.type === 'photo-detail' ? { key: 'sheet-photo-detail', node: <PhotoDetailSheet photo={sheet.photo} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet({ type: 'photo-form', photo: sheet.photo })} onDelete={() => void deletePhoto(sheet.photo)} onOpenTimeline={(entryId) => { setSheet(null); openView('timeline', entryId); }} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} /> } : sheet?.type === 'photo-form' ? { key: 'sheet-photo-form', node: <PhotoForm photo={sheet.photo} timeline={timeline} onClose={() => setSheet(null)} onSubmit={savePhoto} /> } : sheet?.type === 'settings-form' ? { key: 'sheet-settings-form', node: <RelationshipSettingsForm relationshipStart={data.relationshipStart} onClose={() => setSheet(null)} onSubmit={saveRelationshipStart} /> } : null;
+  const activeSheetNode = sheet?.type === 'portraits' ? { key: 'sheet-portraits', node: <PortraitSheet avatars={avatarUrls} days={relationship?.totalDays ?? 0} onClose={() => setSheet(null)} onOpenSettings={() => setView('settings')} /> } : sheet?.type === 'timeline-detail' ? { key: 'sheet-timeline-detail', node: <TimelineDetailSheet entry={sheet.entry} photos={data.photos} activeRole={activeRole} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onSaveComment={(text, role) => addMemoryComment(sheet.entry, text, role)} onEdit={() => setSheet(sheet.entry.type === 'memory' ? { type: 'memory-form', entry: sheet.entry } : { type: 'milestone-form', entry: sheet.entry })} onDelete={() => void deleteTimelineEntry(sheet.entry)} /> } : sheet?.type === 'memory-form' ? { key: 'sheet-memory-form', node: <MemoryForm entry={sheet.entry} draft={sheet.draft} activeRole={activeRole} photos={data.photos} onClose={() => setSheet(null)} onSubmit={(memory, attachments, linkPhotoIds, unlinkPhotoIds) => void saveTimelineEntry(memory, attachments, linkPhotoIds, unlinkPhotoIds)} /> } : sheet?.type === 'milestone-form' ? { key: 'sheet-milestone-form', node: <MilestoneForm entry={sheet.entry} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={saveTimelineEntry} /> } : sheet?.type === 'plan-form' ? { key: 'sheet-plan-form', node: <PlanForm plan={sheet.plan} activeRole={activeRole} onClose={() => setSheet(null)} onSubmit={savePlan} /> } : sheet?.type === 'photo-detail' ? { key: 'sheet-photo-detail', node: <PhotoDetailSheet photo={sheet.photo} timeline={timeline} readOnly={readOnly} disabled={!editingReady} onClose={() => setSheet(null)} onEdit={() => setSheet({ type: 'photo-form', photo: sheet.photo })} onDelete={() => void deletePhoto(sheet.photo)} onOpenTimeline={(entryId) => { setSheet(null); openView('timeline', entryId); }} getAsset={(photo, variant) => repository.getPhotoAssetUrl(photo, variant)} /> } : sheet?.type === 'photo-form' ? { key: 'sheet-photo-form', node: <PhotoForm photo={sheet.photo} timeline={timeline} onClose={() => setSheet(null)} onSubmit={savePhoto} /> } : sheet?.type === 'settings-form' ? { key: 'sheet-settings-form', node: <RelationshipSettingsForm relationshipStart={data.relationshipStart} onClose={() => setSheet(null)} onSubmit={saveRelationshipStart} /> } : null;
 
   return (
     <MotionConfig reducedMotion="user">
@@ -858,7 +872,7 @@ function TimelineItem({ entry, photos, index, readOnly, disabled, onOpen, onEdit
   const isMilestone = entry.type === 'milestone';
   const isSystem = isMilestone && Boolean(entry.systemRole);
   const date = new Date(`${entry.date}T12:00:00`);
-  return <motion.article id={`timeline-${entry.id}`} className={`timeline-item ${isMilestone ? 'milestone-item' : ''}`} variants={itemFallIntoPlace} style={{ '--timeline-index': index } as CSSProperties}><div className="timeline-date"><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat('zh-CN', { month: 'short', year: 'numeric' }).format(date)}</span></div><div className="timeline-dot"><span /></div><div className="memory-entry"><div className="memory-page"><button className="timeline-content-button" onClick={() => onOpen(entry)}>{cover ? <div className="memory-cover" style={{ backgroundImage: `url(${cover.src})` }}><span>{entryPhotos.length} 张照片</span></div> : <div className="memory-cover memory-cover-empty"><ImageIcon size={22} /><span>还没有照片</span></div>}<div className="memory-page-copy"><div className="memory-entry-top"><div><span className="item-meta">{isMilestone ? <span className="timeline-kind">重要日子</span> : entry.location ?? '未记录地点'} <span>·</span> {isSystem ? '关系起点' : isMilestone && entry.repeatAnnual ? '每年重复' : '回忆'}</span><h3>{entry.title}</h3></div><RoleBadge role={entry.createdByRole} prefix="由 " /></div><p>{isMilestone ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{!isMilestone && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{isMilestone && entry.nextOccurrence && <div className="milestone-countdown"><CalendarDays size={14} />下一次 {formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</div>}</div></button></div><div className="entry-actions">{!readOnly && !isSystem && <button className="icon-button subtle" title="编辑" aria-label={`编辑${entry.title}`} onClick={() => onEdit(entry)} disabled={disabled}><Pencil size={15} /></button>}{!readOnly && !isSystem && <button className="icon-button subtle danger-icon" title="删除" aria-label={`删除${entry.title}`} onClick={() => onDelete(entry)} disabled={disabled}><Trash2 size={15} /></button>}<button className="icon-button subtle" title="查看详情" aria-label={`查看${entry.title}`} onClick={() => onOpen(entry)}><MoreHorizontal size={16} /></button></div></div></motion.article>;
+  return <motion.article id={`timeline-${entry.id}`} className={`timeline-item ${isMilestone ? 'milestone-item' : ''}`} variants={itemFallIntoPlace} style={{ '--timeline-index': index } as CSSProperties}><div className="timeline-date"><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat('zh-CN', { month: 'short', year: 'numeric' }).format(date)}</span></div><div className="timeline-dot"><span /></div><div className="memory-entry"><div className="memory-page"><button className="timeline-content-button" onClick={() => onOpen(entry)}>{cover ? <div className="memory-cover" style={{ backgroundImage: `url(${cover.src})` }}><span>{entryPhotos.length} 张照片</span></div> : <div className="memory-cover memory-cover-empty"><ImageIcon size={22} /><span>还没有照片</span></div>}<div className="memory-page-copy"><div className="memory-entry-top"><div><span className="item-meta">{isMilestone ? <span className="timeline-kind">重要日子</span> : entry.location ?? '未记录地点'} <span>·</span> {isSystem ? '关系起点' : isMilestone && entry.repeatAnnual ? '每年重复' : '回忆'}</span><h3>{entry.title}</h3></div><RoleBadge role={entry.createdByRole} prefix="由 " /></div><p>{isMilestone ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{!isMilestone && entry.tags.length > 0 && <div className={"tag-row"}>{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{!isMilestone && (entry.comments?.length ?? 0) > 0 && <span className="comment-count"><MessageCircle size={12} />{entry.comments!.length} 条留言</span>}{isMilestone && entry.nextOccurrence && <div className="milestone-countdown"><CalendarDays size={14} />下一次 {formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</div>}</div></button></div><div className="entry-actions">{!readOnly && !isSystem && <button className="icon-button subtle" title="编辑" aria-label={`编辑${entry.title}`} onClick={() => onEdit(entry)} disabled={disabled}><Pencil size={15} /></button>}{!readOnly && !isSystem && <button className="icon-button subtle danger-icon" title="删除" aria-label={`删除${entry.title}`} onClick={() => onDelete(entry)} disabled={disabled}><Trash2 size={15} /></button>}<button className="icon-button subtle" title="查看详情" aria-label={`查看${entry.title}`} onClick={() => onOpen(entry)}><MoreHorizontal size={16} /></button></div></div></motion.article>;
 }
 
 function formatMonthLabel(month: string): string {
@@ -1021,12 +1035,23 @@ function SettingsView({ data, activeRole, publicDemo, remoteMode, readOnly, onRe
   return <div className="view-stack"><ViewIntro eyebrow="SPACE SETTINGS" title="设置" description="这里管理你们的空间偏好。重要日期会按设定时区计算。" /><section className="settings-list"><div className="settings-item"><div className="settings-icon"><Heart size={18} /></div><div><strong>空间名称</strong><span>{data.spaceName} · 两个人共同编辑</span></div><ChevronRight size={18} className="muted-icon" /></div><div className="settings-item settings-role-item"><div className="settings-icon"><Heart size={18} /></div><div><strong>当前身份</strong><span>新建回忆、照片和计划会默认标记为 {getRoleLabel(activeRole)}。</span><RolePicker value={activeRole} onChange={(role) => { if (role === 'l' || role === 'w') onRoleChange(role); }} label="当前身份" includeBoth={false} /></div></div><button className="settings-item settings-item-button" onClick={onEditStart} disabled={readOnly}><div className="settings-icon"><CalendarDays size={18} /></div><div><strong>恋爱开始日</strong><span>{data.relationshipStart ? `${formatDate(data.relationshipStart, { year: 'numeric', month: 'long', day: 'numeric' })} · ${data.timezone}` : '尚未设置，设置后会开始显示恋爱时长'}</span></div><span className="settings-badge">{readOnly ? '只读' : '编辑'}</span></button><div className="settings-item"><div className="settings-icon"><LockKeyhole size={18} /></div><div><strong>访问安全</strong><span>{accessDescription}</span></div><span className="settings-badge">{accessLabel}</span></div><a className="settings-item settings-item-button" href={getPublicAssetPath('assets/ATTRIBUTIONS.md')} target="_blank" rel="noreferrer"><div className="settings-icon"><Sparkles size={18} /></div><div><strong>视觉素材致谢</strong><span>查看本地贴纸与实拍材质的作者、来源和许可证。</span></div><ChevronRight size={18} className="muted-icon" /></a></section>{!readOnly ? <section className="settings-danger"><div><span className="eyebrow">{dangerEyebrow}</span><h3>清空空间</h3><p>清空后不会恢复任何示例数据。</p></div><div className="settings-actions"><button className="button button-danger" onClick={onReset}><Trash2 size={16} />清空内容</button><button className="button button-outline" onClick={onLock}><LockKeyhole size={16} />锁定空间</button></div></section> : <section className="settings-danger settings-readonly-note"><span className="eyebrow">PUBLIC PREVIEW</span><h3>这是只读入口</h3><p>真实内容和照片请只放在带有 ?space=private 查询参数的私密入口。</p></section>}</div>;
 }
 
-function TimelineDetailSheet({ entry, photos, readOnly, disabled, onClose, onEdit, onDelete }: { entry: TimelineDisplayEntry; photos: Photo[]; readOnly: boolean; disabled: boolean; onClose: () => void; onEdit: () => void; onDelete: () => void }) {
+function TimelineDetailSheet({ entry, photos, activeRole, readOnly, disabled, onClose, onEdit, onDelete, onSaveComment }: { entry: TimelineDisplayEntry; photos: Photo[]; activeRole: ActiveRole; readOnly: boolean; disabled: boolean; onClose: () => void; onEdit: () => void; onDelete: () => void; onSaveComment: (text: string, role: SpaceRole) => void }) {
   const entryPhotos = photos.filter((photo) => photo.timelineEntryId === entry.id);
   const isSystem = entry.type === 'milestone' && Boolean(entry.systemRole);
-  return <Sheet title={entry.type === 'milestone' ? '重要日子' : '回忆详情'} eyebrow={entry.type === 'milestone' ? 'MILESTONE' : 'MEMORY'} onClose={onClose}><div className="detail-meta"><RoleBadge role={entry.createdByRole} prefix="由 " /><span>{formatTimelineDate(entry, entry.date)}</span>{entry.location && <><span>·</span><span><MapPin size={13} />{entry.location}</span></>}</div><h2 className="detail-title">{entry.title}</h2><p className="detail-body">{entry.type === 'milestone' ? entry.note ?? '为这一天留下一点说明。' : entry.body}</p>{entry.type === 'milestone' && entry.nextOccurrence && <div className="detail-highlight"><CalendarDays size={17} /><div><strong>{entry.repeatAnnual ? '下一次纪念日' : '日期倒计时'}</strong><span>{formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</span></div></div>}{entry.type === 'memory' && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{entryPhotos.length > 0 && <div className="detail-photo-grid">{entryPhotos.map((photo) => <img key={photo.id} src={photo.src} alt={photo.caption} />)}</div>}<div className="form-actions">{!readOnly && !disabled && !isSystem && <button className="button button-outline" onClick={onEdit}><Pencil size={16} />编辑</button>}{!readOnly && !disabled && !isSystem && <button className="button button-danger" onClick={onDelete}><Trash2 size={16} />删除</button>}{(readOnly || disabled || isSystem) && <span className="view-note">{isSystem ? '恋爱开始日由空间设置管理' : readOnly ? '公开预览为只读' : '共享空间正在加载'}</span>}</div></Sheet>;
-}
+  const isMemory = entry.type === 'memory';
+  const comments = isMemory ? entry.comments ?? [] : [];
+  const [commentText, setCommentText] = useState('');
+  const [commentRole, setCommentRole] = useState<SpaceRole>(activeRole);
 
+  function submitComment() {
+    const text = commentText.trim();
+    if (!text) return;
+    onSaveComment(text, commentRole);
+    setCommentText('');
+  }
+
+  return <Sheet title={isMemory ? '回忆详情' : '重要日子'} eyebrow={isMemory ? 'MEMORY' : 'MILESTONE'} memoryStyle={isMemory} onClose={onClose}><div className="detail-meta"><RoleBadge role={entry.createdByRole} prefix="由 " /><span>{formatTimelineDate(entry, entry.date)}</span>{entry.location && <><span>·</span><span><MapPin size={13} />{entry.location}</span></>}</div><h2 className="detail-title">{entry.title}</h2><p className="detail-body">{isMemory ? entry.body : entry.note ?? '为这一天留下一点说明。'}</p>{entry.type === 'milestone' && entry.nextOccurrence && <div className="detail-highlight"><CalendarDays size={17} /><div><strong>{entry.repeatAnnual ? '下一次纪念日' : '日期倒计时'}</strong><span>{formatTimelineDate(entry, entry.nextOccurrence)} · 还有 {entry.countdownDays} 天</span></div></div>}{isMemory && entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag tag-soft" key={tag}># {tag}</span>)}</div>}{entryPhotos.length > 0 && <div className="detail-photo-grid">{entryPhotos.map((photo) => <img key={photo.id} src={photo.src} alt={photo.caption} />)}</div>}{isMemory && <div className="memory-comments"><div className="memory-comments-head"><MessageCircle size={15} /><span>留言 · {comments.length}</span></div>{comments.length > 0 ? <ul className="memory-comment-list">{comments.map((comment) => <li key={comment.id} className="memory-comment" data-role={comment.role}><span className="memory-comment-mark" aria-hidden="true">{comment.role === 'l' ? 'L' : comment.role === 'w' ? 'W' : '·'}</span><div><p>{comment.text}</p><time>{formatShortDate(comment.createdAt.slice(0, 10))}</time></div></li>)}</ul> : <p className="memory-comment-empty">还没有留言，把此刻的感受说给对方听。</p>}{!readOnly && !disabled && <div className="memory-comment-editor"><div className="memory-comment-roles" role="group" aria-label="留言身份"><button type="button" className={commentRole === 'l' ? 'selected' : ''} data-role="l" aria-pressed={commentRole === 'l'} onClick={() => setCommentRole('l')}>L</button><button type="button" className={commentRole === 'w' ? 'selected' : ''} data-role="w" aria-pressed={commentRole === 'w'} onClick={() => setCommentRole('w')}>W</button></div><textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="写下你此刻的感受…（Enter 发送，Shift+Enter 换行）" rows={2} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitComment(); } }} /><button type="button" className="button button-dark" disabled={!commentText.trim()} onClick={submitComment}><Heart size={15} fill="currentColor" />留言</button></div>}</div>}<div className="form-actions">{!readOnly && !disabled && !isSystem && <button className="button button-outline" onClick={onEdit}><Pencil size={16} />编辑</button>}{!readOnly && !disabled && !isSystem && <button className="button button-danger" onClick={onDelete}><Trash2 size={16} />删除</button>}{(readOnly || disabled || isSystem) && <span className="view-note">{isSystem ? '恋爱开始日由空间设置管理' : readOnly ? '公开预览为只读' : '共享空间正在加载'}</span>}</div></Sheet>;
+}
 function RelationshipSettingsForm({ relationshipStart, onClose, onSubmit }: { relationshipStart: string | null; onClose: () => void; onSubmit: (relationshipStart: string | null) => void }) {
   const [date, setDate] = useState(relationshipStart ?? '');
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -1036,19 +1061,57 @@ function RelationshipSettingsForm({ relationshipStart, onClose, onSubmit }: { re
   return <Sheet title="设置恋爱开始日" eyebrow="RELATIONSHIP START" onClose={onClose}><form className="modal-form" onSubmit={submit}><p className="form-description">这一天会成为你们时间线的起点，也会用于计算首页的恋爱时长。</p><label>开始日期<input name="relationship-start" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><FormActions onClose={onClose} submitLabel="保存开始日" /></form></Sheet>;
 }
 
+const MEMORY_DRAFT_PREFIX = 'love-space-memory-draft-';
+type MemoryDraftState = {
+  title: string;
+  date: string;
+  location: string;
+  body: string;
+  tags: string;
+  createdByRole: SpaceRole;
+  linkIds?: string[];
+  unlinkIds?: string[];
+  savedAt: string;
+};
+
+function loadMemoryDraft(key: string): Partial<MemoryDraftState> | undefined {
+  try {
+    const raw = window.localStorage.getItem(MEMORY_DRAFT_PREFIX + key);
+    return raw ? JSON.parse(raw) as Partial<MemoryDraftState> : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function MemoryForm({ entry, draft, activeRole, photos, onClose, onSubmit }: { entry?: MemoryEntry; draft?: MemoryEntry; activeRole: ActiveRole; photos: Photo[]; onClose: () => void; onSubmit: (memory: MemoryEntry, attachments: File[], linkPhotoIds: string[], unlinkPhotoIds: string[]) => void }) {
   const initial = entry ?? draft;
-  const [title, setTitle] = useState(initial?.title ?? '');
-  const [date, setDate] = useState(initial?.date ?? todayString());
-  const [location, setLocation] = useState(initial?.location ?? '');
-  const [body, setBody] = useState(initial?.body ?? '');
-  const [tags, setTags] = useState(initial?.tags.join(', ') ?? '');
-  const [createdByRole, setCreatedByRole] = useState<SpaceRole>(initial?.createdByRole ?? activeRole);
+  const draftKey = entry?.id ?? 'new';
+  const savedDraft = useMemo(() => loadMemoryDraft(draftKey), [draftKey]);
+  const [title, setTitle] = useState(savedDraft?.title ?? initial?.title ?? '');
+  const [date, setDate] = useState(savedDraft?.date ?? initial?.date ?? todayString());
+  const [location, setLocation] = useState(savedDraft?.location ?? initial?.location ?? '');
+  const [body, setBody] = useState(savedDraft?.body ?? initial?.body ?? '');
+  const [tags, setTags] = useState(savedDraft?.tags ?? initial?.tags.join(', ') ?? '');
+  const [createdByRole, setCreatedByRole] = useState<SpaceRole>(savedDraft?.createdByRole ?? initial?.createdByRole ?? activeRole);
   const [attachments, setAttachments] = useState<File[]>([]);
-  const [linkIds, setLinkIds] = useState<string[]>([]);
-  const [unlinkIds, setUnlinkIds] = useState<string[]>([]);
+  const [linkIds, setLinkIds] = useState<string[]>(savedDraft?.linkIds ?? []);
+  const [unlinkIds, setUnlinkIds] = useState<string[]>(savedDraft?.unlinkIds ?? []);
+  const [autosavedAt, setAutosavedAt] = useState<string | null>(null);
+  const hasDraftContent = title.trim() !== '' || body.trim() !== '' || location.trim() !== '' || tags.trim() !== '';
   const linkedPhotos = entry ? photos.filter((photo) => photo.timelineEntryId === entry.id) : [];
   const standalonePhotos = photos.filter((photo) => !photo.timelineEntryId && photo.previewAvailable !== false);
+  useEffect(() => {
+    if (!hasDraftContent) return;
+    const timer = window.setTimeout(() => {
+      const payload: MemoryDraftState = { title, date, location, body, tags, createdByRole, linkIds, unlinkIds, savedAt: new Date().toISOString() };
+      try {
+        window.localStorage.setItem(MEMORY_DRAFT_PREFIX + draftKey, JSON.stringify(payload));
+        setAutosavedAt(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+      } catch { /* 存储不可用时静默 */ }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, hasDraftContent, title, date, location, body, tags, createdByRole, linkIds, unlinkIds]);
+
   function toggleLink(photoId: string) {
     setLinkIds((current) => current.includes(photoId) ? current.filter((id) => id !== photoId) : [...current, photoId]);
     setUnlinkIds((current) => current.filter((id) => id !== photoId));
@@ -1060,9 +1123,12 @@ function MemoryForm({ entry, draft, activeRole, photos, onClose, onSubmit }: { e
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!title.trim() || !date || !body.trim()) return;
+    try { window.localStorage.removeItem(MEMORY_DRAFT_PREFIX + draftKey); } catch { /* 忽略 */ }
     onSubmit({ id: entry?.id ?? newId('memory'), type: 'memory', title: title.trim(), date, location: location.trim(), body: body.trim(), tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), createdByRole, createdAt: entry?.createdAt ?? new Date().toISOString(), version: entry?.version, updatedAt: entry?.updatedAt }, attachments, linkIds, unlinkIds);
   }
-  return <Sheet title={entry ? '编辑回忆' : '记录一条回忆'} eyebrow={entry ? 'EDIT MEMORY' : 'NEW MEMORY'} onClose={onClose}><form className="modal-form" onSubmit={submit}><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：第一次一起看海" required /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>地点<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="可以留空" /></label></div><label>写下这一刻<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="发生了什么？你记得什么？" rows={5} required /></label><label>标签<span className="label-hint">用逗号分开</span><input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="旅行, 晴天" /></label><RolePicker value={createdByRole} onChange={setCreatedByRole} label="谁添加了这段回忆" includeUnknown={Boolean(entry)} />{!entry && <div className="memory-attachments"><span className="label-hint">附带照片 <span>可选，保存回忆后会自动关联</span></span><label className="button button-outline memory-attachment-picker"><Upload size={16} />选择照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={(event) => setAttachments(Array.from(event.target.files ?? []))} /></label>{attachments.length > 0 && <p className="form-description">已选择 {attachments.length} 个文件：{attachments.map((file) => file.name).join('、')}</p>}</div>}{entry && <div className="memory-attachments"><span className="label-hint">这个回忆的照片 <span>点击独立照片即可关联，点右上角 ✕ 解除关联</span></span>{linkedPhotos.length > 0 && <div className="memory-photo-row">{linkedPhotos.map((photo) => <span key={photo.id} className={`memory-photo-chip ${unlinkIds.includes(photo.id) ? 'is-removing' : ''}`}><img src={photo.thumbnailSrc || photo.src} alt={photo.caption} /><button type="button" className="memory-photo-unlink" aria-label={`解除关联 ${photo.caption}`} onClick={() => toggleUnlink(photo.id)}><X size={12} /></button>{unlinkIds.includes(photo.id) && <span className="memory-photo-flag">将解除关联</span>}</span>)}</div>}{standalonePhotos.length > 0 && <><span className="label-hint">可关联的独立照片</span><div className="memory-photo-row">{standalonePhotos.map((photo) => <button type="button" key={photo.id} className={`memory-photo-chip is-linkable ${linkIds.includes(photo.id) ? 'is-linking' : ''}`} aria-pressed={linkIds.includes(photo.id)} aria-label={`关联 ${photo.caption}`} onClick={() => toggleLink(photo.id)}><img src={photo.thumbnailSrc || photo.src} alt="" />{linkIds.includes(photo.id) && <span className="memory-photo-flag">将关联</span>}</button>)}</div></>}{linkedPhotos.length === 0 && standalonePhotos.length === 0 && <span className="label-hint">还没有可关联的照片，可以用下面的按钮现拍现传。</span>}<label className="button button-outline memory-attachment-picker"><Upload size={16} />添加新照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={(event) => setAttachments(Array.from(event.target.files ?? []))} /></label>{attachments.length > 0 && <p className="form-description">将新添加 {attachments.length} 个文件：{attachments.map((file) => file.name).join('、')}</p>}</div>}<FormActions onClose={onClose} submitLabel="保存回忆" /></form></Sheet>;
+  return <Sheet title={entry ? '编辑回忆' : '记录一条回忆'} eyebrow={entry ? 'EDIT MEMORY' : 'NEW MEMORY'} onClose={onClose}><form className="modal-form" onSubmit={submit} onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); (event.currentTarget as HTMLFormElement).requestSubmit(); } }}><label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：第一次一起看海" required /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>地点<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="可以留空" /></label></div><label>写下这一刻<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="发生了什么？你记得什么？" rows={7} required /></label><label>标签<span className="label-hint">用逗号分开</span><input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="旅行, 晴天" /></label><RolePicker value={createdByRole} onChange={setCreatedByRole} label="谁添加了这段回忆" includeUnknown={Boolean(entry)} />{!entry && <div className="memory-attachments"><span className="label-hint">附带照片 <span>可选，保存回忆后会自动关联</span></span><label className="button button-outline memory-attachment-picker"><Upload size={16} />选择照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={(event) => setAttachments(Array.from(event.target.files ?? []))} /></label>{attachments.length > 0 && <p className="form-description">已选择 {attachments.length} 个文件：{attachments.map((file) => file.name).join('、')}</p>}</div>}{entry && <div className="memory-attachments"><span className="label-hint">这个回忆的照片 <span>点击独立照片即可关联，点右上角 ✕ 解除关联</span></span>{linkedPhotos.length > 0 && <div className="memory-photo-row">{linkedPhotos.map((photo) => <span key={photo.id} className={`memory-photo-chip ${unlinkIds.includes(photo.id) ? 'is-removing' : ''}`}><img src={photo.thumbnailSrc || photo.src} alt={photo.caption} /><button type="button" className="memory-photo-unlink" aria-label={`解除关联 ${photo.caption}`} onClick={() => toggleUnlink(photo.id)}><X size={12} /></button>{unlinkIds.includes(photo.id) && <span className="memory-photo-flag">将解除关联</span>}</span>)}</div>}{standalonePhotos.length > 0 && <><span className="label-hint">可关联的独立照片</span><div className="memory-photo-row">{standalonePhotos.map((photo) => <button type="button" key={photo.id} className={`memory-photo-chip is-linkable ${linkIds.includes(photo.id) ? 'is-linking' : ''}`} aria-pressed={linkIds.includes(photo.id)} aria-label={`关联 ${photo.caption}`} onClick={() => toggleLink(photo.id)}><img src={photo.thumbnailSrc || photo.src} alt="" />{linkIds.includes(photo.id) && <span className="memory-photo-flag">将关联</span>}</button>)}</div></>}{linkedPhotos.length === 0 && standalonePhotos.length === 0 && <span className="label-hint">还没有可关联的照片，可以用下面的按钮现拍现传。</span>}<label className="button button-outline memory-attachment-picker"><Upload size={16} />添加新照片<input className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={(event) => setAttachments(Array.from(event.target.files ?? []))} /></label>{attachments.length > 0 && <p className="form-description">将新添加 {attachments.length} 个文件：{attachments.map((file) => file.name).join('、')}</p>}</div>}<p className="form-description autosave-note">
+          {autosavedAt ? `草稿已自动保存（${autosavedAt}）` : '输入会自动保存草稿，意外关闭也能恢复'} · Enter 换行，Ctrl+Enter 保存
+        </p><FormActions onClose={onClose} submitLabel="保存回忆" /></form></Sheet>;
 }
 
 function MilestoneForm({ entry, activeRole, onClose, onSubmit }: { entry?: MilestoneEntry; activeRole: ActiveRole; onClose: () => void; onSubmit: (milestone: MilestoneEntry) => void }) {
@@ -1112,7 +1178,7 @@ function PhotoForm({ photo, timeline, onClose, onSubmit }: { photo: Photo; timel
   return <Sheet title="编辑照片" eyebrow="EDIT PHOTO" onClose={onClose}><div className="photo-edit-preview"><img src={photo.src} alt={photo.caption} /></div><form className="modal-form" onSubmit={submit}><label>说明<input value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="这张照片记得什么？" /></label><div className="form-grid"><label>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label><label>关联时间线<select value={timelineEntryId} onChange={(event) => setTimelineEntryId(event.target.value)}><option value="">独立照片</option>{timeline.filter((entry) => entry.type === 'memory' || entry.type === 'milestone').map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select></label></div><RolePicker value={createdByRole} onChange={setCreatedByRole} label="谁添加了这张照片" includeUnknown /><FormActions onClose={onClose} submitLabel="保存照片" /></form></Sheet>;
 }
 
-function Sheet({ title, eyebrow, children, onClose }: { title: string; eyebrow: string; children: ReactNode; onClose: () => void }) {
+function Sheet({ title, eyebrow, children, onClose, memoryStyle = false }: { title: string; eyebrow: string; children: ReactNode; onClose: () => void; memoryStyle?: boolean }) {
   const dialogRef = useRef<HTMLElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
 
@@ -1141,13 +1207,22 @@ function Sheet({ title, eyebrow, children, onClose }: { title: string; eyebrow: 
       }
     }
     document.addEventListener('keydown', handleKeyDown);
+    // 焦点自愈:输入状态意外丢失(焦点掉到 body)时,把焦点请回弹窗内第一个输入框
+    const healTimer = window.setInterval(() => {
+      const panel = dialogRef.current;
+      if (!panel || document.activeElement !== document.body) return;
+      const target = panel.querySelector<HTMLElement>('input, textarea');
+      (target ?? panel).focus({ preventScroll: true });
+    }, 900);
+
     return () => {
+      window.clearInterval(healTimer);
       document.removeEventListener('keydown', handleKeyDown);
       previousFocus.current?.focus();
     };
   }, [onClose]);
 
-  return <motion.div className="sheet-backdrop" role="presentation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><motion.section ref={dialogRef} className="sheet lace-top" role="dialog" aria-modal="true" aria-label={title} initial={{ opacity: 0, y: 46, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 30, scale: .98 }} transition={{ type: 'spring', stiffness: 340, damping: 30 }}><div className="sheet-handle" aria-hidden="true" /><div className="modal-head"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div><button className="icon-button" title="关闭" aria-label="关闭" onClick={onClose}><X size={19} /></button></div>{children}</motion.section></motion.div>;
+  return <motion.div className="sheet-backdrop" role="presentation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><motion.section ref={dialogRef} className={memoryStyle ? 'sheet lace-top sheet-memory' : 'sheet lace-top'} role="dialog" aria-modal="true" aria-label={title} initial={{ opacity: 0, y: 46, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 30, scale: .98 }} transition={{ type: 'spring', stiffness: 340, damping: 30 }}><div className="sheet-handle" aria-hidden="true" /><div className="modal-head"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div><button className="icon-button" title="关闭" aria-label="关闭" onClick={onClose}><X size={19} /></button></div>{children}</motion.section></motion.div>;
 }
 
 function FormActions({ onClose, submitLabel }: { onClose: () => void; submitLabel: string }) {
